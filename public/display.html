@@ -41,18 +41,24 @@
 <div id="offline" role="status"></div>
 <button id="sound" type="button" autofocus>Turn on sound<small>Click once, or press OK on the TV remote</small></button>
 <script>
-// Voice: chained clips from public/audio, read digit by digit (C12 = "C, one, two").
-// clip = the recording of the queue's name, played before its number.
+// Voice: chained clips from public/audio/<voice>/, read digit by digit (C12 = "C, one, two").
+// QUEUE_CLIP = the recording of the queue's name, played before its number. The voice is chosen on the control panel.
 const QUEUE_CLIP = { A: 'Authority to Accept Payment', C: 'Confirmation Letter' };
+const VOICES = ['Valkyrie', 'Halliday'];
+let voice = VOICES[0];
 const clips = {};
-const clip = (name) => clips[name] ??= Object.assign(new Audio(`audio/${name}.wav`), { preload: 'auto' });
-['chime', 'Now Serving', ...Object.values(QUEUE_CLIP), 'A', 'C', ...'0123456789', 'Counter1', 'Counter2', 'Counter3'].forEach(clip);
+// chime is shared by both voices, so it stays in public/audio itself.
+const clip = (name, v = voice) => clips[`${v}/${name}`] ??=
+  Object.assign(new Audio(name === 'chime' ? 'audio/chime.wav' : `audio/${v}/${name}.wav`), { preload: 'auto' });
+for (const v of VOICES) {
+  ['chime', 'Now Serving', ...Object.values(QUEUE_CLIP), 'A', 'C', ...'0123456789', 'Counter1', 'Counter2', 'Counter3'].forEach((n) => clip(n, v));
+}
 
 const offline = document.getElementById('offline');
 // Plays one clip; a missing/broken clip is skipped so the rest of the call still plays.
-const playOne = (name) => new Promise((done) => {
-  const a = clip(name);
-  const skip = () => { if (name !== 'chime') offline.textContent = `Voice file missing: public/audio/${name}.wav`; done(); };
+const playOne = (name, v) => new Promise((done) => {
+  const a = clip(name, v);
+  const skip = () => { if (name !== 'chime') offline.textContent = `Voice file missing: public/audio/${v}/${name}.wav`; done(); };
   if (a.error) return skip();
   a.currentTime = 0;
   a.onended = done;
@@ -62,9 +68,10 @@ const playOne = (name) => new Promise((done) => {
 let speaking = Promise.resolve(); // announcements queue up instead of overlapping
 const announce = (q, n, counter) => {
   // e.g. A12 at counter 2: Now Serving → Authority to Accept Payment → A → 1 → 2 → Counter2
+  const v = voice; // a call keeps the voice it was made with, even if it changes while queued
   speaking = speaking.then(async () => {
     const tail = counter ? [`Counter${counter}`] : [];
-    for (const name of ['chime', 'Now Serving', QUEUE_CLIP[q], q, ...String(n), ...tail]) await playOne(name);
+    for (const name of ['chime', 'Now Serving', QUEUE_CLIP[q], q, ...String(n), ...tail]) await playOne(name, v);
   });
 };
 
@@ -79,6 +86,7 @@ const lastCalls = {};
 async function tick() {
   try {
     const s = await (await fetch('/state', { cache: 'no-store' })).json();
+    if (VOICES.includes(s.voice)) voice = s.voice;
     for (const q of ['A', 'C']) {
       const { serving, calls, waiting, counter } = s[q];
       const num = document.getElementById('num' + q);

@@ -46,6 +46,8 @@
   .counters input:focus-visible + span { outline: 3px solid var(--ink); outline-offset: 3px; }
   .counters label:hover span { background: #fff; }
   .counters label:hover input:checked + span { background: var(--ink); }
+  .voice { margin-left: auto; }
+  .voice span { font-size: 1.1rem; padding: .4rem .9rem; }
   button.call { grid-column: 1 / -1; font: 700 2rem/1 var(--display); padding: 1.1rem; background: var(--lane); color: var(--on-lane); border-color: var(--lane); }
   button.call:not(:disabled):hover { filter: brightness(1.08); }
   button.issue:not(:disabled):hover, button.repeat:not(:disabled):hover { background: #fff; }
@@ -104,6 +106,11 @@
 <body>
 <header>
   <h1>Queue control</h1>
+  <fieldset class="counters voice" id="voice">
+    <legend>TV voice</legend>
+    <label><input type="radio" name="voice" value="Valkyrie"><span>Woman</span></label>
+    <label><input type="radio" name="voice" value="Halliday"><span>Man</span></label>
+  </fieldset>
   <a href="display.html" target="_blank">Open TV display</a>
 </header>
 <form id="unlock" hidden>
@@ -215,6 +222,7 @@ function render() {
     if (kept && !pick.querySelector(`option[value="${kept}"]`)?.disabled) pick.value = kept;
     btn(q, 'recall').disabled = serving === 0;
   }
+  document.querySelector(`input[name="voice"][value="${state.voice}"]`).checked = true; // shared by all panels
   if (refocus && document.activeElement !== f) el.querySelector(refocus)?.focus();
 }
 
@@ -257,11 +265,11 @@ for (const q of Object.keys(QUEUES)) {
   if (saved) el.querySelector(`input[name="counter${q}"][value="${saved}"]`).checked = true;
 }
 
-async function send(queue, type, number) {
+async function send(queue, type, number, voice) {
   const res = await fetch('/action', {
     method: 'POST',
     headers: { 'X-Control-Password': localStorage.getItem('controlPassword') || '' },
-    body: JSON.stringify({ queue, type, number, counter: type === 'next' ? chosenCounter(queue) : undefined }),
+    body: JSON.stringify({ queue, type, number, voice, counter: type === 'next' ? chosenCounter(queue) : undefined }),
   });
   if (res.status === 401) {
     const { error } = await res.json();
@@ -286,6 +294,13 @@ async function send(queue, type, number) {
     stub.innerHTML = `<strong>${queue}${number}</strong><span>Added. ${where}</span>`;
   }
 }
+
+// Voice is one setting on the server (the TV reads it); a rejected change is put back by render().
+document.getElementById('voice').addEventListener('change', (e) => {
+  send(undefined, 'voice', undefined, e.target.value)
+    .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'))
+    .finally(() => state && render());
+});
 
 const toast = document.getElementById('toast');
 let toastTimer, toastOpener;

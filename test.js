@@ -121,4 +121,14 @@ issue('C', 2);
 assert.deepStrictEqual(view(s).C.waiting, [1, 3]);
 assert.deepStrictEqual(view({ A: { issued: 1, serving: 0, calls: 0 }, C: {} }).A.missing, [], 'old state has no missing list');
 
+// Voice: one shared setting, not per queue.
+s = initial();
+assert.strictEqual(view(s).voice, 'Valkyrie');
+s = apply(s, { type: 'voice', voice: 'Halliday' });
+assert.deepStrictEqual([view(s).voice, s.A.issued], ['Halliday', 0]);
+for (const voice of ['halliday', undefined, '../x']) {
+  assert.throws(() => apply(s, { type: 'voice', voice }), /bad voice/, `voice ${voice} rejected`);
+}
+assert.strictEqual(view({ A: {}, C: {} }).voice, 'Valkyrie', 'old state gets the default voice');
+
 console.log('all queue tests passed');

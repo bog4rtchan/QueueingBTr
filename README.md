@@ -50,6 +50,7 @@ Several control pages can be open at once (different PCs or tabs); each one show
 | **Add a number to the line** | For a missing stub: pick the number from the dropdown and press Add to line. A number lower than the one now serving goes first in line; any other number slots into number order. |
 | **Missing stubs (settings)** | Per queue: mark numbers whose stub is lost or damaged. They are never issued or called (Issue jumps over them). The list stays after Start over; unmark a number when its stub is back. |
 | **Waiting in line** | Click a number to skip it (client left); Call jumps over it and the TV stops listing it. Click it again to bring it back. |
+| **TV voice: Woman / Man** | Picks the voice the TV announces with (Woman = Valkyrie, Man = Halliday). One setting for the whole office: changing it on one control panel changes it everywhere. |
 | **Start over at A1** | Starts the queue over from A1 / C1 after you confirm. Use at the start of the day. |
 
 ## Voice clips
@@ -58,7 +59,8 @@ The voice plays from the **display page** (the TV). Browsers only allow sound af
 opens with a **Turn on sound** button: click it once (or press OK on the TV remote) each time the page is opened.
 It also switches to fullscreen.
 
-The recordings live in `public/audio/` as WAV files, named exactly like this:
+There are two voices, each in its own folder: `public/audio/Valkyrie/` (woman) and `public/audio/Halliday/` (man).
+Each folder has the same WAV files, named exactly like this (`chime.wav` goes in `public/audio/` itself, shared by both):
 
 | File | Says |
 |------|------|
@@ -76,8 +78,8 @@ All of them are preloaded when the display page opens. Numbers are read digit by
 - A12 to counter 2 plays `Now Serving → Authority to Accept Payment → A → 1 → 2 → Counter2`
 - C7 to counter 3 plays `Now Serving → Confirmation Letter → C → 7 → Counter3`
 
-To change a recording, replace the file with one of the same name and refresh the control page.
-If a clip is missing, it is skipped and the control page shows which file is missing.
+To change a recording, replace the file with one of the same name and refresh the display page.
+If a clip is missing, it is skipped and the display page shows which file is missing.
 
 ## Deploy to the cloud (Render + Upstash, free tiers)
 

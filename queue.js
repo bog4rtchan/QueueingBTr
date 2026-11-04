@@ -2,12 +2,14 @@
 const QUEUES = ['A', 'C'];
 const TYPES = ['add', 'next', 'recall', 'reset', 'skip', 'insert', 'missing'];
 const COUNTERS = [1, 2, 3];
+// Announcement voices = folders in public/audio. Shared, because the TV plays the sound.
+const VOICES = ['Valkyrie', 'Halliday'];
 
 // line = waiting numbers in calling order; skipped = taken out of the line, can be brought back.
 // counter = which counter (1–3) the number on screen was called to; 0 = none yet.
 // missing = stubs lost from the ticket set: never issued or called, and kept across Start over.
 const fresh = () => ({ issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [] });
-const initial = () => ({ A: fresh(), C: fresh() });
+const initial = () => ({ A: fresh(), C: fresh(), voice: VOICES[0] });
 
 // State saved before the line was stored only had counters: rebuild the line from them once.
 function normalize(q = {}) {
@@ -35,7 +37,11 @@ const checkNumber = (number) => {
 };
 
 // Returns a new state, or throws on invalid input.
-function apply(state, { queue, type, number, counter } = {}) {
+function apply(state, { queue, type, number, counter, voice } = {}) {
+  if (type === 'voice') {
+    if (!VOICES.includes(voice)) throw new Error('bad voice');
+    return { ...state, voice };
+  }
   if (!QUEUES.includes(queue)) throw new Error('bad queue');
   if (!TYPES.includes(type)) throw new Error('bad type');
   const q = normalize(state[queue]);
@@ -89,9 +95,12 @@ function apply(state, { queue, type, number, counter } = {}) {
 }
 
 // What pages receive: stored state plus `waiting` (the line), the name pages already use.
-const view = (state) => Object.fromEntries(QUEUES.map((k) => {
-  const q = normalize(state[k]);
-  return [k, { ...q, waiting: q.line }];
-}));
+const view = (state) => ({
+  ...Object.fromEntries(QUEUES.map((k) => {
+    const q = normalize(state[k]);
+    return [k, { ...q, waiting: q.line }];
+  })),
+  voice: VOICES.includes(state.voice) ? state.voice : VOICES[0], // older saved state has no voice
+});
 
 module.exports = { apply, initial, view };
