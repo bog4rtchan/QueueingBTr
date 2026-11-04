@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now serving</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; background: var(--ink); color: var(--paper); overflow: hidden; }
+  h1 { font: 700 7vh/1 var(--display); margin: 0; padding: 2.2vh 4vw; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; }
+  section { background: var(--lane); color: var(--on-lane); padding: 4vh 4vw; display: flex; flex-direction: column; overflow: hidden; }
+  h2 { font: 600 5vh/1.2 var(--text); margin: 0; }
+  /* min-height: 0 lets the number shrink before the up-next row is pushed off screen */
+  .num { flex: 1; min-height: 0; display: flex; align-items: center; font: 900 min(42vh, 24vw)/1 var(--display); margin: 0; }
+  .num span { display: block; }
+  footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 2vw; border-top: .4vh solid currentColor; padding-top: 2vh; }
+  .next { margin: 0; font-size: 3.6vh; }
+  .next b { display: inline-flex; gap: 2.5vw; margin-left: 1.5vw; font: 900 11vh/1 var(--display); vertical-align: -1vh; }
+  .wait { font-size: 3.6vh; margin: 0; }
+  .wait b { font: 700 5vh/1 var(--display); }
+  #offline { position: fixed; bottom: 1.5vh; right: 1.5vw; background: var(--stop); color: #fff; padding: .6vh 1vw; font-size: 2.2vh; }
+  #offline:empty { display: none; }
+</style>
+</head>
+<body>
+<h1>Now serving</h1>
+<main>
+  <section class="lane-A"><h2>ATAP issuance</h2><p class="num" aria-live="polite"><span id="numA">–</span></p><footer><p class="next">Up next<b id="nextA"></b></p><p class="wait"><b id="waitA">0</b> waiting</p></footer></section>
+  <section class="lane-C"><h2>CL issuance</h2><p class="num" aria-live="polite"><span id="numC">–</span></p><footer><p class="next">Up next<b id="nextC"></b></p><p class="wait"><b id="waitC">0</b> waiting</p></footer></section>
+</main>
+<div id="offline" role="status"></div>
+<script>
+// shortcut: polls every second instead of a push connection; fine for one TV on a LAN.
+const lastCalls = {};
+async function tick() {
+  try {
+    const s = await (await fetch('/state', { cache: 'no-store' })).json();
+    for (const q of ['A', 'C']) {
+      const { serving, calls, waiting } = s[q];
+      const num = document.getElementById('num' + q);
+      num.textContent = serving ? q + serving : '–';
+      document.getElementById('wait' + q).textContent = waiting.length;
+      // The next two waiting tickets (skipped ones are already left out by the server), e.g. A5 A6.
+      const upNext = waiting.slice(0, 2).map((n) => `<span>${q}${n}</span>`);
+      document.getElementById('next' + q).innerHTML = upNext.join('') || '<span>–</span>';
+      // A new call (or repeat) slides the number up like a ticket being pulled.
+      if (lastCalls[q] !== undefined && calls > lastCalls[q]) {
+        num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
+      }
+      lastCalls[q] = calls;
+    }
+    document.getElementById('offline').textContent = '';
+  } catch {
+    document.getElementById('offline').textContent = 'Lost connection to the queue PC. Retrying…';
+  }
+}
+tick();
+setInterval(tick, 1000);
+document.body.addEventListener('click', () => document.documentElement.requestFullscreen?.());
+</script>
+</body>
+</html>

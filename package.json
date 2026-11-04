@@ -1,0 +1,12 @@
+{
+  "name": "queue-number",
+  "private": true,
+  "description": "ATAP and CL issuance queue with TV display and voice calls",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

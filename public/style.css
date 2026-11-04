@@ -1,0 +1,23 @@
+/* Shared tokens for control and display. Fonts are local so the system works offline. */
+@font-face { font-family: 'Big Shoulders Display'; src: url(fonts/big-shoulders.woff2) format('woff2'); font-weight: 100 900; }
+@font-face { font-family: 'Public Sans'; src: url(fonts/public-sans.woff2) format('woff2'); font-weight: 100 900; }
+
+:root {
+  --ink: #13233A;
+  --paper: #EEF1EC;
+  --line: #C3CCC8;
+  --atap: #1F5F8B;
+  --cl: #F0B323;
+  --stop: #B42318;
+  --display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --text: 'Public Sans', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--text); color: var(--ink); background: var(--paper); }
+/* Each queue keeps one colour on both screens so clients can find their line at a glance. */
+.lane-A { --lane: var(--atap); --on-lane: #fff; }
+.lane-C { --lane: var(--cl); --on-lane: var(--ink); }
+
+@keyframes pull { from { transform: translateY(35%); opacity: 0; } to { transform: none; opacity: 1; } }
+.pulled { animation: pull .5s cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .pulled { animation: none; } }
