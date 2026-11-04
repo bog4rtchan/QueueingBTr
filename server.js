@@ -5,11 +5,14 @@ const crypto = require('node:crypto');
 const { apply, initial, view } = require('./queue');
 
 const PORT = process.env.PORT || 3000;
-// localhost only by default; HOST=0.0.0.0 for the LAN. Railway must listen publicly.
-const HOST = process.env.HOST || (process.env.RAILWAY_ENVIRONMENT_NAME ? '0.0.0.0' : '127.0.0.1');
+// localhost only by default; HOST=0.0.0.0 for the LAN. Render (sets RENDER) must listen publicly.
+const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
 const PUBLIC = path.join(__dirname, 'public');
-// On Railway, keep state on the attached volume so redeploys don't wipe the numbers.
-const STATE_FILE = path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname, 'state.json');
+const STATE_FILE = path.join(__dirname, 'state.json');
+// Render's free disk is wiped on every restart, so in the cloud state lives in Upstash Redis instead.
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const STATE_KEY = 'queue-state';
 // Required whenever the server is reachable from other machines; the display stays public (read-only).
 const PASSWORD = process.env.CONTROL_PASSWORD || '';
 const LOCAL_ONLY = HOST === '127.0.0.1' || HOST === 'localhost';
@@ -23,15 +26,44 @@ function allowed(req) {
 }
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg' };
 
+// Upstash REST: POST a Redis command as a JSON array, get back { result }.
+async function redis(command) {
+  const res = await fetch(UPSTASH_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+    body: JSON.stringify(command),
+  });
+  if (!res.ok) throw new Error(`Upstash ${res.status}: ${await res.text()}`);
+  return (await res.json()).result;
+}
+
+async function loadState() {
+  if (UPSTASH_URL) {
+    // A failed read throws and stops startup: starting empty would overwrite the real queue on the next click.
+    const saved = await redis(['GET', STATE_KEY]);
+    return saved ? JSON.parse(saved) : initial();
+  }
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { return initial(); }
+}
+
+// Saves run one after another so an older snapshot can never land after a newer one.
+let saving = Promise.resolve();
+function saveState() {
+  const snapshot = JSON.stringify(state);
+  saving = saving.then(() => (UPSTASH_URL ? redis(['SET', STATE_KEY, snapshot]) : fs.promises.writeFile(STATE_FILE, snapshot)))
+    // The in-memory state is still right and the next save writes the full snapshot, so log and carry on.
+    .catch((e) => console.error('Saving state failed:', e.message));
+  return saving;
+}
+
 let state;
-try { state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { state = initial(); }
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
 };
 
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
 
   if (url.pathname === '/state' && req.method === 'GET') return json(res, 200, view(state));
@@ -45,8 +77,8 @@ http.createServer((req, res) => {
     req.on('end', () => {
       try { state = apply(state, JSON.parse(body)); }
       catch (e) { return json(res, 400, { error: e.message }); }
-      fs.writeFileSync(STATE_FILE, JSON.stringify(state));
       json(res, 200, view(state));
+      saveState();
     });
     return;
   }
@@ -58,8 +90,17 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(PORT, HOST, () => {
-  if (!LOCAL_ONLY && !PASSWORD) console.warn('CONTROL_PASSWORD is not set: controls are disabled until it is.');
-  console.log(`Control: http://localhost:${PORT}/control.html`);
-  console.log(`Display: http://localhost:${PORT}/display.html`);
+});
+
+loadState().then((loaded) => {
+  state = loaded;
+  server.listen(PORT, HOST, () => {
+    if (!LOCAL_ONLY && !PASSWORD) console.warn('CONTROL_PASSWORD is not set: controls are disabled until it is.');
+    console.log(`State: ${UPSTASH_URL ? 'Upstash Redis' : STATE_FILE}`);
+    console.log(`Control: http://localhost:${PORT}/control.html`);
+    console.log(`Display: http://localhost:${PORT}/display.html`);
+  });
+}).catch((e) => {
+  console.error('Could not load the queue state, not starting:', e.message);
+  process.exit(1);
 });

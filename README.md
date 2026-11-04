@@ -72,26 +72,28 @@ All of them are preloaded when the control page opens. Numbers are read digit by
 To change a recording, replace the file with one of the same name and refresh the control page.
 If a clip is missing, it is skipped and the control page shows which file is missing.
 
-## Deploy to the cloud (Railway)
+## Deploy to the cloud (Render + Upstash, free tiers)
 
-Railway runs `server.js` as-is and serves the pages, audio and numbers from one HTTPS address.
+Render runs `server.js`; Upstash Redis keeps the queue numbers (Render's free disk is wiped on every restart).
 
-1. Create an account at railway.com.
-2. Install the CLI (`npm i -g @railway/cli`), then in this folder:
-   ```bash
-   railway login
-   railway init          # create a new project
-   railway up            # upload and deploy this folder
-   ```
-3. In the Railway dashboard, open the service:
-   - **Variables:** add `CONTROL_PASSWORD` with a strong password. Without it the buttons stay disabled.
-   - **Volumes:** add a volume (any mount path, e.g. `/data`). The queue numbers are saved there so a redeploy doesn't reset them.
-   - **Settings, Networking:** click **Generate Domain** to get the public address.
-4. Open `https://<your-domain>/control.html` on the office PC and enter the password once (it's remembered on that PC).
-   The TV opens `https://<your-domain>/display.html` (no password, view only).
+1. **Upstash:** sign up at upstash.com, create a **Redis** database (free; pick a region near Render's, e.g. Singapore).
+   On its page, under **REST API**, copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+2. **Render:** sign up at render.com with GitHub, then **New → Web Service** and pick this repo.
+   - Runtime: Node. Build command: `npm install`. Start command: `node server.js`. Instance type: **Free**.
+   - **Environment variables:**
+     - `CONTROL_PASSWORD`: a strong password (without it the buttons stay disabled)
+     - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: from step 1
+   - Create the service. Render gives you `https://<name>.onrender.com`.
+3. Open `https://<name>.onrender.com/control.html` on the office PC and enter the password once (remembered on that PC).
+   The TV opens `https://<name>.onrender.com/display.html` (no password, view only).
 
-The voice still plays from the control page's PC, so that PC needs speakers.
-If the office internet goes down, the queue stops until it's back.
+Every push to GitHub redeploys automatically; the numbers stay in Upstash.
+
+Things to know:
+- Free Render services **sleep after ~15 minutes with no visitors**. The open TV display keeps it awake, but the first
+  load in the morning can take 30–60 seconds.
+- If the Upstash keys are wrong, the server refuses to start (so it never overwrites the saved queue). Check Render's logs.
+- The voice plays from the control page's PC, so that PC needs speakers. If the office internet goes down, the queue stops.
 
 ## Test
 
