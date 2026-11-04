@@ -20,11 +20,21 @@
   .filter input:checked + span { background: var(--ink); color: var(--paper); }
   .filter input:focus-visible + span { outline: 3px solid var(--ink); outline-offset: 3px; }
   .filter label:hover input:not(:checked) + span { background: #fff; }
-  table { border-collapse: collapse; width: 100%; max-width: 56rem; }
+  table { border-collapse: collapse; width: 100%; max-width: 64rem; }
   th, td { text-align: left; padding: .4rem .8rem .4rem 0; border-bottom: 1px solid var(--line); }
   th { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
   .tag { display: inline-block; min-width: 3rem; padding: .15rem .45rem; border-radius: 4px; font: 700 1.1rem/1 var(--display);
     background: var(--lane); color: var(--on-lane); }
+  /* Status circles: mark + colour, so they read without telling red from green. */
+  .dot { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; font: 700 .9rem/1 var(--text); }
+  .dot.done { background: var(--go); color: #fff; }
+  .dot.todo { border: 2px solid #9AA6A1; }
+  .dot.skip { background: var(--stop); color: #fff; }
+  td.status { text-align: center; padding-right: 0; }
+  th.status { text-align: center; padding-right: 0; }
+  .note { color: var(--stop); font-weight: 600; }
+  tr.reset td { background: #E4E8E6; font-weight: 600; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -41,28 +51,68 @@
     <label><input type="radio" name="histq" value="C"><span>CL</span></label>
   </fieldset>
   <table>
-    <thead><tr><th scope="col">Time</th><th scope="col">Ticket</th><th scope="col">Queue</th><th scope="col">State</th><th scope="col">Counter</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="5">Loading…</td></tr></tbody>
+    <thead><tr><th scope="col">Issued at</th><th scope="col">Ticket</th><th scope="col">Queue</th><th scope="col" class="status">Issued</th><th scope="col" class="status">On queue</th><th scope="col" class="status">Called</th><th scope="col">Counter</th><th scope="col">Note</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="8">Loading…</td></tr></tbody>
   </table>
 </main>
 <script>
 const QUEUE_NAME = { A: 'ATAP', C: 'CL' };
-const STATE_LABEL = { add: 'Issued', next: 'Called', recall: 'Repeat call', skip: 'Skipped', unskip: 'Brought back',
-  insert: 'Added to line', missing: 'Marked missing', found: 'Unmarked missing', reset: 'Started over' };
 const warn = document.getElementById('warn');
 let entries = [], lastJson = '';
 
+// One row per ticket, built by replaying the server's event log. Start over adds a divider row and
+// starts fresh numbering, so each day's A1, A2… stay together.
+function tickets() {
+  const rows = [], maps = { A: new Map(), C: new Map() };
+  const get = (e, n) => {
+    let t = maps[e.queue].get(n);
+    if (!t) {
+      t = { queue: e.queue, number: n, at: e.at, called: false, counter: 0, note: '' };
+      maps[e.queue].set(n, t);
+      rows.push(t);
+    }
+    return t;
+  };
+  for (const e of entries) {
+    const map = maps[e.queue];
+    if (!map) continue;
+    if (e.type === 'add' || e.type === 'insert') Object.assign(get(e, e.number), { called: false, counter: 0, note: '' });
+    if (e.type === 'next') Object.assign(get(e, e.number), { called: true, counter: e.counter, note: '' });
+    if (e.type === 'back') {
+      Object.assign(get(e, e.number), { called: true, counter: e.counter, note: '' });
+      if (e.returned) Object.assign(get(e, e.returned), { called: false, counter: 0 }); // back on queue
+    }
+    if (e.type === 'skip') get(e, e.number).note = 'Skipped';
+    if (e.type === 'unskip') get(e, e.number).note = '';
+    if (e.type === 'missing' && map.has(e.number)) { map.get(e.number).hidden = true; map.delete(e.number); } // missing stubs aren't listed
+    if (e.type === 'reset') {
+      for (const t of map.values()) if (!t.called && !t.note) t.note = 'Removed by Start over'; // skipped ones keep "Skipped"
+      rows.push({ reset: true, queue: e.queue, at: e.at });
+      maps[e.queue] = new Map();
+    }
+  }
+  return rows.filter((t) => !t.hidden);
+}
+
+const when = (at) => {
+  const d = new Date(at);
+  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString() : d.toLocaleString();
+};
+const dot = (step, kind) => {
+  const [mark, word] = { done: ['✓', 'yes'], todo: ['', 'not yet'], skip: ['✕', 'removed'] }[kind];
+  return `<td class="status"><span class="dot ${kind}" aria-hidden="true">${mark}</span><span class="sr">${step}: ${word}</span></td>`;
+};
+
 function draw() {
   const only = document.querySelector('input[name="histq"]:checked').value;
-  const today = new Date().toDateString();
-  const rows = entries.filter((e) => !only || e.queue === only).reverse().map((e) => {
-    const d = new Date(e.at);
-    const time = d.toDateString() === today ? d.toLocaleTimeString() : d.toLocaleString();
-    return `<tr><td>${time}</td><td>${e.number ? `<span class="tag lane-${e.queue}">${e.queue}${e.number}</span>` : '–'}</td>
-      <td>${QUEUE_NAME[e.queue] ?? e.queue}</td><td>${STATE_LABEL[e.type] ?? e.type}</td>
-      <td>${e.counter ? `Counter ${e.counter}` : '–'}</td></tr>`;
+  const rows = tickets().filter((t) => !only || t.queue === only).reverse().map((t) => {
+    if (t.reset) return `<tr class="reset"><td colspan="8">Started over · ${QUEUE_NAME[t.queue]} · ${when(t.at)}</td></tr>`;
+    const red = Boolean(t.note); // skipped or removed: every circle red
+    return `<tr><td>${when(t.at)}</td><td><span class="tag lane-${t.queue}">${t.queue}${t.number}</span></td><td>${QUEUE_NAME[t.queue]}</td>
+      ${dot('Issued', red ? 'skip' : 'done')}${dot('On queue', red ? 'skip' : 'done')}${dot('Called', red ? 'skip' : t.called ? 'done' : 'todo')}
+      <td>${t.called ? `Counter ${t.counter}` : '–'}</td><td class="note">${t.note}</td></tr>`;
   });
-  document.getElementById('rows').innerHTML = rows.join('') || '<tr><td colspan="5">Nothing yet.</td></tr>';
+  document.getElementById('rows').innerHTML = rows.join('') || '<tr><td colspan="8">Nothing yet.</td></tr>';
 }
 
 // shortcut: polls every 2s like the other pages; fine for an office, switch to push if many people keep it open.

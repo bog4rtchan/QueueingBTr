@@ -12,7 +12,7 @@ assert.strictEqual(s.A.serving, 1);
 s = apply(s, { queue: 'A', type: 'recall' });
 assert.deepStrictEqual([s.A.serving, s.A.calls], [1, 2], 'recall keeps number, bumps calls');
 s = apply(s, { queue: 'A', type: 'reset' });
-assert.deepStrictEqual(s.A, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [] });
+assert.deepStrictEqual(s.A, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [], previous: [] });
 assert.strictEqual(s.C.issued, 1, 'reset A leaves C alone');
 assert.throws(() => apply(s, { queue: 'X', type: 'add' }));
 assert.throws(() => apply(s, { queue: 'A', type: 'delete' }));
@@ -163,5 +163,26 @@ s = { ...s, history: Array.from({ length: 2000 }, (_, i) => ({ at: i, queue: 'A'
 act({ queue: 'C', type: 'add' });
 assert.deepStrictEqual([s.history.length, s.history[0].at, s.history.at(-1).queue], [2000, 1, 'C'], 'log capped at 2000, oldest dropped');
 assert.strictEqual(apply({ A: { issued: 1 }, C: {} }, { queue: 'A', type: 'add' }, 7).history.length, 1, 'old state without history');
+
+// Back to the previous number: undoes a call, the number on screen goes first in line.
+s = initial();
+for (let i = 0; i < 4; i++) s = apply(s, { queue: 'A', type: 'add' });
+assert.strictEqual(apply(s, { queue: 'A', type: 'back' }), s, 'nothing called yet: back is a no-op');
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
+s = apply(s, { queue: 'A', type: 'next', counter: 2 });
+s = apply(s, { queue: 'A', type: 'next', counter: 3 });
+const callsBefore = s.A.calls;
+s = apply(s, { queue: 'A', type: 'back' }, 50);
+assert.deepStrictEqual([s.A.serving, s.A.counter, s.A.line, s.A.calls], [2, 2, [3, 4], callsBefore + 1], 'back shows A2 at counter 2, A3 first in line');
+assert.deepStrictEqual(s.history.at(-1), { at: 50, queue: 'A', type: 'back', number: 2, counter: 2, returned: 3 });
+s = apply(s, { queue: 'A', type: 'back' });
+assert.deepStrictEqual([s.A.serving, s.A.counter, s.A.line], [1, 1, [2, 3, 4]]);
+const atStart = s;
+assert.strictEqual(apply(s, { queue: 'A', type: 'back' }), atStart, 'no earlier call: no-op');
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
+assert.deepStrictEqual([s.A.serving, s.A.line], [2, [3, 4]], 'Call after back brings the returned number up');
+s = apply(s, { queue: 'A', type: 'reset' });
+assert.deepStrictEqual(s.A.previous, [], 'Start over clears the back stack');
+assert.deepStrictEqual(view({ A: { issued: 1, serving: 1, calls: 1 }, C: {} }).A.previous, [], 'old state has no previous list');
 
 console.log('all queue tests passed');

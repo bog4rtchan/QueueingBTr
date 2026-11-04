@@ -50,7 +50,8 @@
   .voice span { font-size: 1.1rem; padding: .4rem .9rem; }
   button.call { grid-column: 1 / -1; font: 700 2rem/1 var(--display); padding: 1.1rem; background: var(--lane); color: var(--on-lane); border-color: var(--lane); }
   button.call:not(:disabled):hover { filter: brightness(1.08); }
-  button.issue:not(:disabled):hover, button.repeat:not(:disabled):hover { background: #fff; }
+  button.issue:not(:disabled):hover, button.repeat:not(:disabled):hover, button.back:not(:disabled):hover { background: #fff; }
+  button.back { grid-column: 1 / -1; }
   button.reset { grid-column: 1 / -1; justify-self: start; border: 0; padding: .5rem 0; font-size: .95rem; color: var(--stop); text-decoration: underline; text-underline-offset: 3px; }
 
   /* The stub mirrors the paper ticket the client is told: perforated edge, number large. */
@@ -152,6 +153,7 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
       <button class="call" data-q="${q}" data-type="next"></button>
       <button class="issue" data-q="${q}" data-type="add"></button>
       <button class="repeat" data-q="${q}" data-type="recall">Repeat call</button>
+      <button class="back" data-q="${q}" data-type="back"></button>
       <div class="stub" id="stub${q}" aria-live="polite"></div>
       <div class="line">
         <h3 id="lineh${q}">Waiting in line</h3>
@@ -180,7 +182,7 @@ function render() {
   const refocus = f?.dataset?.number ? `[data-q="${f.dataset.q}"][data-type="${f.dataset.type}"][data-number="${f.dataset.number}"]`
     : f?.tagName === 'SELECT' ? `#${f.id}` : null;
   for (const q of Object.keys(QUEUES)) {
-    const { issued, serving, waiting, skipped, missing } = state[q];
+    const { issued, serving, waiting, skipped, missing, previous } = state[q];
     document.getElementById(`serving${q}`).textContent = serving ? q + serving : '–';
     document.getElementById(`waiting${q}`).textContent = waiting.length;
     document.getElementById(`last${q}`).textContent = issued ? q + issued : '–';
@@ -222,6 +224,10 @@ function render() {
     pick.innerHTML = options;
     if (kept && !pick.querySelector(`option[value="${kept}"]`)?.disabled) pick.value = kept;
     btn(q, 'recall').disabled = serving === 0;
+    // Undo a call: shows the previous number again; the one on screen goes back to the front of the line.
+    const prev = previous.at(-1);
+    btn(q, 'back').textContent = prev ? `Back to ${q}${prev.number}` : 'Back to previous number';
+    btn(q, 'back').disabled = !prev;
   }
   document.querySelector(`input[name="voice"][value="${state.voice}"]`).checked = true; // shared by all panels
   if (refocus && document.activeElement !== f) el.querySelector(refocus)?.focus();
