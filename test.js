@@ -131,4 +131,37 @@ for (const voice of ['halliday', undefined, '../x']) {
 }
 assert.strictEqual(view({ A: {}, C: {} }).voice, 'Valkyrie', 'old state gets the default voice');
 
+// History: one entry per queue action, at the server's time; not part of view().
+s = initial();
+let t = 1000;
+const act = (a) => { s = apply(s, a, t++); };
+assert.strictEqual(apply(s, { queue: 'A', type: 'next', counter: 1 }, 5), s, 'no-op Call is not logged');
+assert.strictEqual(apply(s, { queue: 'A', type: 'recall' }, 5), s, 'Repeat call with nothing on screen is a no-op');
+act({ queue: 'A', type: 'add' });
+act({ queue: 'A', type: 'add' });
+act({ queue: 'A', type: 'next', counter: 2 });
+act({ queue: 'A', type: 'skip', number: 2 });
+act({ queue: 'A', type: 'skip', number: 2 });
+act({ queue: 'A', type: 'recall' });
+act({ queue: 'C', type: 'missing', number: 4 });
+act({ queue: 'C', type: 'missing', number: 4 });
+act({ queue: 'A', type: 'reset' });
+act({ type: 'voice', voice: 'Halliday' });
+assert.deepStrictEqual(s.history, [
+  { at: 1000, queue: 'A', type: 'add', number: 1 },
+  { at: 1001, queue: 'A', type: 'add', number: 2 },
+  { at: 1002, queue: 'A', type: 'next', number: 1, counter: 2 },
+  { at: 1003, queue: 'A', type: 'skip', number: 2 },
+  { at: 1004, queue: 'A', type: 'unskip', number: 2 },
+  { at: 1005, queue: 'A', type: 'recall', number: 1, counter: 2 },
+  { at: 1006, queue: 'C', type: 'missing', number: 4 },
+  { at: 1007, queue: 'C', type: 'found', number: 4 },
+  { at: 1008, queue: 'A', type: 'reset' },
+], 'history entries; voice change not logged; Start over keeps the log');
+assert.strictEqual('history' in view(s), false, '/state does not carry the history');
+s = { ...s, history: Array.from({ length: 2000 }, (_, i) => ({ at: i, queue: 'A', type: 'add', number: i + 1 })) };
+act({ queue: 'C', type: 'add' });
+assert.deepStrictEqual([s.history.length, s.history[0].at, s.history.at(-1).queue], [2000, 1, 'C'], 'log capped at 2000, oldest dropped');
+assert.strictEqual(apply({ A: { issued: 1 }, C: {} }, { queue: 'A', type: 'add' }, 7).history.length, 1, 'old state without history');
+
 console.log('all queue tests passed');

@@ -83,6 +83,15 @@
   .missing ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
   .missing button { font: 700 1.1rem/1 var(--display); padding: .4rem .55rem; min-width: 3.2rem; border-width: 2px; }
   .missing button:hover { background: #fff; }
+  #history { border-top: 1px solid var(--line); padding: 1rem 1.5rem 2rem; }
+  #history summary { font: 700 1.3rem/1 var(--display); cursor: pointer; }
+  #history summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  #history .counters { margin: 1rem 0; }
+  #history table { border-collapse: collapse; width: 100%; max-width: 56rem; }
+  #history th, #history td { text-align: left; padding: .4rem .8rem .4rem 0; border-bottom: 1px solid var(--line); }
+  #history th { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+  #history .tag { display: inline-block; min-width: 3rem; padding: .15rem .45rem; border-radius: 4px; font: 700 1.1rem/1 var(--display);
+    background: var(--lane); color: var(--on-lane); }
   .missing button[aria-pressed="true"] { border-style: dashed; color: #6B7A85; text-decoration: line-through; background: #E4E8E6; }
 
   /* Start-over confirmation: a toast instead of a blocking browser popup. */
@@ -120,6 +129,19 @@
 </form>
 <p id="warn" role="alert"></p>
 <main id="queues"></main>
+<details id="history">
+  <summary>History</summary>
+  <fieldset class="counters">
+    <legend>Show</legend>
+    <label><input type="radio" name="histq" value="" checked><span>All</span></label>
+    <label><input type="radio" name="histq" value="A"><span>ATAP</span></label>
+    <label><input type="radio" name="histq" value="C"><span>CL</span></label>
+  </fieldset>
+  <table>
+    <thead><tr><th scope="col">Time</th><th scope="col">Ticket</th><th scope="col">Queue</th><th scope="col">What happened</th><th scope="col">Counter</th></tr></thead>
+    <tbody id="historyRows"></tbody>
+  </table>
+</details>
 <div class="toast" id="toast" role="alertdialog" aria-labelledby="toastMsg" hidden>
   <p id="toastMsg"></p>
   <button class="cancel" type="button">Keep queue</button>
@@ -236,6 +258,7 @@ function setState(next) {
   state = next;
   lastJson = json;
   render();
+  loadHistory();
   // A call or repeat (from this panel or another one) slides the number in.
   for (const q of Object.keys(QUEUES)) {
     if (prev && next[q].calls > prev[q].calls) {
@@ -244,6 +267,31 @@ function setState(next) {
     }
   }
 }
+
+// History: fetched only while the section is open, and only when the state changed (every logged action does).
+const HISTORY_LABEL = { add: 'Issued', next: 'Called', recall: 'Repeat call', skip: 'Skipped', unskip: 'Brought back',
+  insert: 'Added to line', missing: 'Marked missing', found: 'Unmarked missing', reset: 'Started over' };
+const historyBox = document.getElementById('history');
+let historyEntries = [];
+async function loadHistory() {
+  if (!historyBox.open) return;
+  try { historyEntries = await (await fetch('/history', { cache: 'no-store' })).json(); } catch { return; } // poll() shows the offline banner
+  drawHistory();
+}
+function drawHistory() {
+  const only = historyBox.querySelector('input[name="histq"]:checked').value;
+  const today = new Date().toDateString();
+  const rows = historyEntries.filter((e) => !only || e.queue === only).reverse().map((e) => {
+    const d = new Date(e.at);
+    const time = d.toDateString() === today ? d.toLocaleTimeString() : d.toLocaleString();
+    return `<tr><td>${time}</td><td>${e.number ? `<span class="tag lane-${e.queue}">${e.queue}${e.number}</span>` : '–'}</td>
+      <td>${QUEUES[e.queue]?.name.replace(' issuance', '') ?? e.queue}</td><td>${HISTORY_LABEL[e.type] ?? e.type}</td>
+      <td>${e.counter ? `Counter ${e.counter}` : '–'}</td></tr>`;
+  });
+  document.getElementById('historyRows').innerHTML = rows.join('') || '<tr><td colspan="5">Nothing yet.</td></tr>';
+}
+historyBox.addEventListener('toggle', loadHistory);
+historyBox.addEventListener('change', drawHistory);
 
 const unlock = document.getElementById('unlock');
 unlock.addEventListener('submit', (e) => {

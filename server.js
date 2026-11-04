@@ -67,6 +67,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
 
   if (url.pathname === '/state' && req.method === 'GET') return json(res, 200, view(state));
+  if (url.pathname === '/history' && req.method === 'GET') return json(res, 200, state.history ?? []);
 
   if (url.pathname === '/action' && req.method === 'POST') {
     if (!allowed(req)) {
@@ -75,7 +76,8 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; if (body.length > 1000) req.destroy(); });
     req.on('end', () => {
-      try { state = apply(state, JSON.parse(body)); }
+      // Times come from the server clock, not the browser's.
+      try { state = apply(state, JSON.parse(body), Date.now()); }
       catch (e) { return json(res, 400, { error: e.message }); }
       json(res, 200, view(state));
       saveState();
