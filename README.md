@@ -42,7 +42,8 @@ second screen, open `http://localhost:3000/display.html` on it, then click the p
 | Button | What it does |
 |--------|--------------|
 | **Issue A8** | Issues the next ticket. Tell or write it for the client. |
-| **Call A5** | Calls the next waiting number, plays the voice, and updates the TV. |
+| **Counter 1 / 2 / 3** | Choose which counter the client goes to. Call stays disabled until one is chosen; the choice stays selected (remembered on that PC) until changed. |
+| **Call A5 to Counter 2** | Calls the next waiting number to that counter. The TV shows the number and "Counter 2" and announces both. |
 | **Repeat call** | Replays the voice for the current number. |
 | **Add a number to the line** | For a missing stub: pick the number from the dropdown and press Add to line. A number lower than the one now serving goes first in line; any other number slots into number order. |
 | **Waiting in line** | Click a number to skip it (client left); Call jumps over it and the TV stops listing it. Click it again to bring it back. |
@@ -64,12 +65,13 @@ The recordings live in `public/audio/` as WAV files, named exactly like this:
 | `A.wav` | "A" |
 | `C.wav` | "C" |
 | `0.wav` … `9.wav` | "zero" … "nine" |
+| `Counter1.wav` … `Counter3.wav` | "please proceed to counter 1" … "3" |
 | `chime.wav` | optional "ding" before each call |
 
 All of them are preloaded when the display page opens. Numbers are read digit by digit:
 
-- A12 plays `Now Serving → Authority to Accept Payment → A → 1 → 2`
-- C7 plays `Now Serving → Confirmation Letter → C → 7`
+- A12 to counter 2 plays `Now Serving → Authority to Accept Payment → A → 1 → 2 → Counter2`
+- C7 to counter 3 plays `Now Serving → Confirmation Letter → C → 7 → Counter3`
 
 To change a recording, replace the file with one of the same name and refresh the control page.
 If a clip is missing, it is skipped and the control page shows which file is missing.

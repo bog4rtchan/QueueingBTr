@@ -15,6 +15,8 @@
   /* min-height: 0 lets the number shrink before the up-next row is pushed off screen */
   .num { flex: 1; min-height: 0; display: flex; align-items: center; font: 900 min(42vh, 24vw)/1 var(--display); margin: 0; }
   .num span { display: block; }
+  .counter { margin: 0 0 3vh; font: 700 8vh/1 var(--display); }
+  .counter:empty { display: none; }
   footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 2vw; border-top: .4vh solid currentColor; padding-top: 2vh; }
   .next { margin: 0; font-size: 3.6vh; }
   .next b { display: inline-flex; gap: 2.5vw; margin-left: 1.5vw; font: 900 11vh/1 var(--display); vertical-align: -1vh; }
@@ -33,8 +35,8 @@
 <body>
 <h1>Now serving</h1>
 <main>
-  <section class="lane-A"><h2>ATAP issuance</h2><p class="num" aria-live="polite"><span id="numA">–</span></p><footer><p class="next">Up next<b id="nextA"></b></p><p class="wait"><b id="waitA">0</b> waiting</p></footer></section>
-  <section class="lane-C"><h2>CL issuance</h2><p class="num" aria-live="polite"><span id="numC">–</span></p><footer><p class="next">Up next<b id="nextC"></b></p><p class="wait"><b id="waitC">0</b> waiting</p></footer></section>
+  <section class="lane-A"><h2>ATAP issuance</h2><p class="num" aria-live="polite"><span id="numA">–</span></p><p class="counter" id="counterA"></p><footer><p class="next">Up next<b id="nextA"></b></p><p class="wait"><b id="waitA">0</b> waiting</p></footer></section>
+  <section class="lane-C"><h2>CL issuance</h2><p class="num" aria-live="polite"><span id="numC">–</span></p><p class="counter" id="counterC"></p><footer><p class="next">Up next<b id="nextC"></b></p><p class="wait"><b id="waitC">0</b> waiting</p></footer></section>
 </main>
 <div id="offline" role="status"></div>
 <button id="sound" type="button" autofocus>Turn on sound<small>Click once, or press OK on the TV remote</small></button>
@@ -44,7 +46,7 @@
 const QUEUE_CLIP = { A: 'Authority to Accept Payment', C: 'Confirmation Letter' };
 const clips = {};
 const clip = (name) => clips[name] ??= Object.assign(new Audio(`audio/${name}.wav`), { preload: 'auto' });
-['chime', 'Now Serving', ...Object.values(QUEUE_CLIP), 'A', 'C', ...'0123456789'].forEach(clip);
+['chime', 'Now Serving', ...Object.values(QUEUE_CLIP), 'A', 'C', ...'0123456789', 'Counter1', 'Counter2', 'Counter3'].forEach(clip);
 
 const offline = document.getElementById('offline');
 // Plays one clip; a missing/broken clip is skipped so the rest of the call still plays.
@@ -58,10 +60,11 @@ const playOne = (name) => new Promise((done) => {
   a.play().catch(skip);
 });
 let speaking = Promise.resolve(); // announcements queue up instead of overlapping
-const announce = (q, n) => {
-  // e.g. A12: Now Serving → Authority to Accept Payment → A → 1 → 2
+const announce = (q, n, counter) => {
+  // e.g. A12 at counter 2: Now Serving → Authority to Accept Payment → A → 1 → 2 → Counter2
   speaking = speaking.then(async () => {
-    for (const name of ['chime', 'Now Serving', QUEUE_CLIP[q], q, ...String(n)]) await playOne(name);
+    const tail = counter ? [`Counter${counter}`] : [];
+    for (const name of ['chime', 'Now Serving', QUEUE_CLIP[q], q, ...String(n), ...tail]) await playOne(name);
   });
 };
 
@@ -77,9 +80,10 @@ async function tick() {
   try {
     const s = await (await fetch('/state', { cache: 'no-store' })).json();
     for (const q of ['A', 'C']) {
-      const { serving, calls, waiting } = s[q];
+      const { serving, calls, waiting, counter } = s[q];
       const num = document.getElementById('num' + q);
       num.textContent = serving ? q + serving : '–';
+      document.getElementById('counter' + q).textContent = serving && counter ? `Counter ${counter}` : '';
       document.getElementById('wait' + q).textContent = waiting.length;
       // The next two waiting tickets (skipped ones are already left out by the server), e.g. A5 A6.
       const upNext = waiting.slice(0, 2).map((n) => `<span>${q}${n}</span>`);
@@ -87,7 +91,7 @@ async function tick() {
       // A new call (or repeat) slides the number up like a ticket being pulled, and is announced.
       if (lastCalls[q] !== undefined && calls > lastCalls[q]) {
         num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
-        announce(q, serving);
+        announce(q, serving, counter);
       }
       lastCalls[q] = calls;
     }

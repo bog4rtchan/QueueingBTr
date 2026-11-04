@@ -1,9 +1,11 @@
 // Pure queue logic: A = ATAP issuance, C = CL issuance.
 const QUEUES = ['A', 'C'];
 const TYPES = ['add', 'next', 'recall', 'reset', 'skip', 'insert'];
+const COUNTERS = [1, 2, 3];
 
 // line = waiting numbers in calling order; skipped = taken out of the line, can be brought back.
-const fresh = () => ({ issued: 0, serving: 0, calls: 0, line: [], skipped: [] });
+// counter = which counter (1–3) the number on screen was called to; 0 = none yet.
+const fresh = () => ({ issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [] });
 const initial = () => ({ A: fresh(), C: fresh() });
 
 // State saved before the line was stored only had counters: rebuild the line from them once.
@@ -14,7 +16,7 @@ function normalize(q = {}) {
     line = [];
     for (let n = serving + 1; n <= issued; n++) if (!skipped.includes(n)) line.push(n);
   }
-  return { issued, serving, calls: q.calls ?? 0, line: [...line], skipped };
+  return { issued, serving, counter: q.counter ?? 0, calls: q.calls ?? 0, line: [...line], skipped };
 }
 
 // Passed numbers (below serving) go first, behind passed numbers re-added earlier;
@@ -32,7 +34,7 @@ const checkNumber = (number) => {
 };
 
 // Returns a new state, or throws on invalid input.
-function apply(state, { queue, type, number } = {}) {
+function apply(state, { queue, type, number, counter } = {}) {
   if (!QUEUES.includes(queue)) throw new Error('bad queue');
   if (!TYPES.includes(type)) throw new Error('bad type');
   const q = normalize(state[queue]);
@@ -41,7 +43,10 @@ function apply(state, { queue, type, number } = {}) {
     q.line.push(q.issued);
   }
   if (type === 'next') {
+    // Staff must pick the counter the client goes to; it's shown on the TV and announced.
+    if (!COUNTERS.includes(counter)) throw new Error('bad counter');
     if (!q.line.length) return state; // nobody waiting
+    q.counter = counter;
     q.serving = q.line.shift();
     q.skipped = q.skipped.filter((s) => s > q.serving); // skipped numbers behind us no longer matter
     q.calls++;

@@ -2,17 +2,17 @@ const assert = require('node:assert');
 const { apply, initial, view } = require('./queue');
 
 let s = initial();
-assert.strictEqual(apply(s, { queue: 'A', type: 'next' }), s, 'next with nobody waiting is a no-op');
+assert.strictEqual(apply(s, { queue: 'A', type: 'next', counter: 1 }), s, 'next with nobody waiting is a no-op');
 s = apply(s, { queue: 'A', type: 'add' });
 s = apply(s, { queue: 'A', type: 'add' });
 s = apply(s, { queue: 'C', type: 'add' });
 assert.deepStrictEqual([s.A.issued, s.C.issued], [2, 1], 'queues are independent');
-s = apply(s, { queue: 'A', type: 'next' });
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
 assert.strictEqual(s.A.serving, 1);
 s = apply(s, { queue: 'A', type: 'recall' });
 assert.deepStrictEqual([s.A.serving, s.A.calls], [1, 2], 'recall keeps number, bumps calls');
 s = apply(s, { queue: 'A', type: 'reset' });
-assert.deepStrictEqual(s.A, { issued: 0, serving: 0, calls: 0, line: [], skipped: [] });
+assert.deepStrictEqual(s.A, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [] });
 assert.strictEqual(s.C.issued, 1, 'reset A leaves C alone');
 assert.throws(() => apply(s, { queue: 'X', type: 'add' }));
 assert.throws(() => apply(s, { queue: 'A', type: 'delete' }));
@@ -20,30 +20,30 @@ assert.throws(() => apply(s, { queue: 'A', type: 'delete' }));
 // Skipping: issue C2..C5 (C1 already issued above), serve C1, then skip C2 (the next) and C4 (further back).
 s = initial();
 for (let i = 0; i < 5; i++) s = apply(s, { queue: 'C', type: 'add' });
-s = apply(s, { queue: 'C', type: 'next' });
+s = apply(s, { queue: 'C', type: 'next', counter: 1 });
 s = apply(s, { queue: 'C', type: 'skip', number: 2 });
 s = apply(s, { queue: 'C', type: 'skip', number: 4 });
 assert.deepStrictEqual(view(s).C.waiting, [3, 5], 'skipped numbers leave the waiting list');
 s = apply(s, { queue: 'C', type: 'skip', number: 4 });
 assert.deepStrictEqual(view(s).C.waiting, [3, 4, 5], 'skipping again brings the number back');
-s = apply(s, { queue: 'C', type: 'next' });
+s = apply(s, { queue: 'C', type: 'next', counter: 1 });
 assert.strictEqual(s.C.serving, 3, 'next jumps over skipped C2');
 assert.deepStrictEqual(s.C.skipped, [], 'skipped numbers behind the served one are dropped');
 s = apply(s, { queue: 'C', type: 'skip', number: 4 });
 s = apply(s, { queue: 'C', type: 'skip', number: 5 });
 const before = s;
-assert.strictEqual(apply(s, { queue: 'C', type: 'next' }), before, 'all remaining skipped = nobody waiting');
+assert.strictEqual(apply(s, { queue: 'C', type: 'next', counter: 1 }), before, 'all remaining skipped = nobody waiting');
 for (const number of [3, 6, 0, '4', undefined]) {
   assert.throws(() => apply(s, { queue: 'C', type: 'skip', number }), /bad number/, `skip ${number} rejected`);
 }
 // state.json saved before skipping existed has no skipped list
 assert.deepStrictEqual(view({ A: { issued: 2, serving: 0, calls: 0 }, C: { issued: 0, serving: 0, calls: 0 } }).A.waiting, [1, 2]);
-assert.strictEqual(apply({ A: { issued: 2, serving: 0, calls: 0 }, C: {} }, { queue: 'A', type: 'next' }).A.serving, 1);
+assert.strictEqual(apply({ A: { issued: 2, serving: 0, calls: 0 }, C: {} }, { queue: 'A', type: 'next', counter: 1 }).A.serving, 1);
 
 // Inserting a specific number (missing stub). Issue A1–A8, call up to A6.
 s = initial();
 for (let i = 0; i < 8; i++) s = apply(s, { queue: 'A', type: 'add' });
-for (let i = 0; i < 6; i++) s = apply(s, { queue: 'A', type: 'next' });
+for (let i = 0; i < 6; i++) s = apply(s, { queue: 'A', type: 'next', counter: 1 });
 assert.strictEqual(s.A.serving, 6);
 s = apply(s, { queue: 'A', type: 'insert', number: 3 });
 assert.deepStrictEqual(view(s).A.waiting, [3, 7, 8], 'passed number goes first in line');
@@ -56,7 +56,7 @@ s = apply(s, { queue: 'A', type: 'add' });
 assert.deepStrictEqual(view(s).A.waiting.slice(-1), [13], 'next Issue is A13');
 s = apply(s, { queue: 'A', type: 'insert', number: 10 });
 assert.deepStrictEqual(view(s).A.waiting, [3, 5, 7, 8, 10, 12, 13], 'number between waiting ones slots into order');
-s = apply(s, { queue: 'A', type: 'next' });
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
 assert.strictEqual(s.A.serving, 3, 'Call takes the re-added number first');
 for (const [number, msg] of [[5, /already in line/], [3, /now serving/], [0, /bad number/], ['5', /bad number/], [undefined, /bad number/]]) {
   assert.throws(() => apply(s, { queue: 'A', type: 'insert', number }), msg, `insert ${number} rejected`);
@@ -73,7 +73,22 @@ assert.deepStrictEqual(view(s).A.waiting, [5, 7, 8, 10, 12, 13]);
 // Old saved state (counters only) gets its line rebuilt, honouring skipped numbers.
 const old = { A: { issued: 5, serving: 1, calls: 1, skipped: [3] }, C: { issued: 0, serving: 0, calls: 0 } };
 assert.deepStrictEqual(view(old).A.waiting, [2, 4, 5]);
-const migrated = apply(old, { queue: 'A', type: 'next' });
+const migrated = apply(old, { queue: 'A', type: 'next', counter: 1 });
 assert.deepStrictEqual([migrated.A.serving, migrated.A.line], [2, [4, 5]], 'old state: Call skips the skipped A3');
+
+// Counter: required on Call, stored with the number, kept by Repeat call.
+s = initial();
+s = apply(s, { queue: 'C', type: 'add' });
+s = apply(s, { queue: 'C', type: 'add' });
+for (const counter of [undefined, 0, 4, '2']) {
+  assert.throws(() => apply(s, { queue: 'C', type: 'next', counter }), /bad counter/, `counter ${counter} rejected`);
+}
+s = apply(s, { queue: 'C', type: 'next', counter: 2 });
+assert.deepStrictEqual([s.C.serving, s.C.counter], [1, 2], 'called to counter 2');
+s = apply(s, { queue: 'C', type: 'recall' });
+assert.strictEqual(s.C.counter, 2, 'repeat call keeps the counter');
+s = apply(s, { queue: 'C', type: 'next', counter: 3 });
+assert.deepStrictEqual([s.C.serving, s.C.counter, s.A.counter], [2, 3, 0], 'next call can go to another counter; A untouched');
+assert.strictEqual(view({ A: { issued: 1, serving: 1, calls: 1 }, C: {} }).A.counter, 0, 'old state has no counter yet');
 
 console.log('all queue tests passed');

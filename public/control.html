@@ -36,6 +36,16 @@
   button { font: 600 1.1rem/1.2 var(--text); padding: 1rem; border-radius: 6px; cursor: pointer; border: 2px solid var(--ink); background: transparent; color: var(--ink); }
   button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
   button:disabled { opacity: .35; cursor: not-allowed; }
+  /* Counter picker: the Call button stays disabled until one is chosen. */
+  .counters { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0; padding: 0; border: 0; }
+  .counters legend { float: left; font-weight: 600; margin-right: .5rem; padding: 0; }
+  .counters label { position: relative; }
+  .counters input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .counters span { display: block; font: 700 1.4rem/1 var(--display); padding: .55rem 1.1rem; border: 2px solid var(--ink); border-radius: 6px; }
+  .counters input:checked + span { background: var(--ink); color: var(--paper); }
+  .counters input:focus-visible + span { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .counters label:hover span { background: #fff; }
+  .counters label:hover input:checked + span { background: var(--ink); }
   button.call { grid-column: 1 / -1; font: 700 2rem/1 var(--display); padding: 1.1rem; background: var(--lane); color: var(--on-lane); border-color: var(--lane); }
   button.call:not(:disabled):hover { filter: brightness(1.08); }
   button.issue:not(:disabled):hover, button.repeat:not(:disabled):hover { background: #fff; }
@@ -117,6 +127,10 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
       </dl>
     </div>
     <div class="actions">
+      <fieldset class="counters">
+        <legend>Send the client to</legend>
+        ${[1, 2, 3].map((c) => `<label><input type="radio" name="counter${q}" value="${c}"><span>Counter ${c}</span></label>`).join('')}
+      </fieldset>
       <button class="call" data-q="${q}" data-type="next"></button>
       <button class="issue" data-q="${q}" data-type="add"></button>
       <button class="repeat" data-q="${q}" data-type="recall">Repeat call</button>
@@ -144,8 +158,10 @@ function render() {
     document.getElementById(`waiting${q}`).textContent = waiting.length;
     document.getElementById(`last${q}`).textContent = issued ? q + issued : '–';
     // Buttons name the exact number they act on, so staff never work it out.
-    btn(q, 'next').textContent = waiting.length ? `Call ${q}${waiting[0]}` : 'No one waiting';
-    btn(q, 'next').disabled = waiting.length === 0;
+    const counter = chosenCounter(q);
+    btn(q, 'next').textContent = !waiting.length ? 'No one waiting'
+      : counter ? `Call ${q}${waiting[0]} to Counter ${counter}` : 'Choose a counter first';
+    btn(q, 'next').disabled = !waiting.length || !counter;
     // Real calling order (re-added numbers can be first), then skipped ones.
     const line = [...waiting, ...skipped];
     document.getElementById(`line${q}`).innerHTML = line.length
@@ -177,11 +193,23 @@ unlock.addEventListener('submit', (e) => {
   warn.textContent = 'Unlocked. Press the button again.';
 });
 
+// The chosen counter stays selected (and is remembered on this PC) until changed.
+const chosenCounter = (q) => Number(el.querySelector(`input[name="counter${q}"]:checked`)?.value) || 0;
+el.addEventListener('change', (e) => {
+  if (!e.target.name?.startsWith('counter')) return;
+  localStorage.setItem(e.target.name, e.target.value);
+  render();
+});
+for (const q of Object.keys(QUEUES)) {
+  const saved = localStorage.getItem(`counter${q}`);
+  if (saved) el.querySelector(`input[name="counter${q}"][value="${saved}"]`).checked = true;
+}
+
 async function send(queue, type, number) {
   const res = await fetch('/action', {
     method: 'POST',
     headers: { 'X-Control-Password': localStorage.getItem('controlPassword') || '' },
-    body: JSON.stringify({ queue, type, number }),
+    body: JSON.stringify({ queue, type, number, counter: type === 'next' ? chosenCounter(queue) : undefined }),
   });
   if (res.status === 401) {
     const { error } = await res.json();
