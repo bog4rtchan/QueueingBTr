@@ -10,6 +10,13 @@
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .9rem 1.5rem; border-bottom: 1px solid var(--line); }
   header h1 { font: 700 1.6rem/1 var(--display); margin: 0; }
   header a { color: var(--ink); font-weight: 600; }
+  header nav { display: flex; gap: 1.25rem; align-items: baseline; }
+  header nav a[aria-current="page"] { text-decoration-thickness: 3px; text-underline-offset: 5px; }
+  /* Two jobs, two screens: ?for=desk issues tickets, ?for=officer calls them. No ?for= shows everything. */
+  body[data-role="desk"] [data-for="officer"], body[data-role="officer"] [data-for="desk"] { display: none !important; }
+  body[data-role="desk"] button.issue { grid-column: 1 / -1; font: 700 2.4rem/1 var(--display); padding: 1.4rem; box-shadow: 0 6px 0 #000; }
+  body[data-role="desk"] .stub strong { font-size: 4rem; }
+  body[data-role="officer"] button.back { grid-column: auto; } /* Issue is hidden: Repeat and Back share the row */
   #warn { margin: 0; padding: .6rem 1.5rem; background: #FDECEA; color: var(--stop); font-weight: 600; }
   #warn:empty { display: none; }
   /* Password bar: only shown when the server asks for the control password (cloud/LAN). */
@@ -130,14 +137,18 @@
 </head>
 <body>
 <header>
-  <h1>Queue control</h1>
-  <fieldset class="counters voice" id="voice">
+  <h1 id="title">Queue control</h1>
+  <fieldset class="counters voice" id="voice" data-for="officer">
     <legend>TV voice</legend>
     <label><input type="radio" name="voice" value="Valkyrie"><span>Valkyrie</span></label>
     <label><input type="radio" name="voice" value="Halliday"><span>Halliday</span></label>
   </fieldset>
-  <a href="history.html">History</a>
-  <a href="display.html" target="_blank">Open TV display</a>
+  <nav aria-label="Pages">
+    <a href="control.html?for=officer">Control</a>
+    <a href="control.html?for=desk">Queue Issuance</a>
+    <a href="history.html">History</a>
+    <a href="display.html" target="_blank">Display</a>
+  </nav>
 </header>
 <form id="unlock" hidden>
   <label for="pw">Enter the control password to use the buttons</label>
@@ -154,6 +165,13 @@
 
 <script>
 const QUEUES = { A: { name: 'ATAP issuance' }, C: { name: 'CL issuance' } };
+// Which screen this is: the front desk issues tickets, officers call them (the CSS hides the other job's controls).
+const ROLE = ['desk', 'officer'].find((r) => r === new URLSearchParams(location.search).get('for')) ?? '';
+if (ROLE) {
+  document.body.dataset.role = ROLE;
+  document.getElementById('title').textContent = document.title = ROLE === 'desk' ? 'Queue Issuance' : 'Control';
+  document.querySelector(`header nav a[href="control.html?for=${ROLE}"]`).setAttribute('aria-current', 'page');
+}
 // The TV display plays the announcements; this page only sends actions.
 const warn = document.getElementById('warn');
 
@@ -170,31 +188,31 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
       </dl>
     </div>
     <div class="actions">
-      <fieldset class="counters">
+      <fieldset class="counters" data-for="officer">
         <legend>Send the client to</legend>
         ${[1, 2, 3].map((c) => `<label><input type="radio" name="counter${q}" value="${c}"><span>Counter ${c}</span></label>`).join('')}
       </fieldset>
-      <button class="call" data-q="${q}" data-type="next"></button>
-      <button class="issue" data-q="${q}" data-type="add"></button>
-      <button class="repeat" data-q="${q}" data-type="recall">Repeat call</button>
-      <button class="back" data-q="${q}" data-type="back"></button>
-      <div class="stub" id="stub${q}" aria-live="polite"></div>
-      <div class="line">
+      <button class="call" data-q="${q}" data-type="next" data-for="officer"></button>
+      <button class="issue" data-q="${q}" data-type="add" data-for="desk"></button>
+      <button class="repeat" data-q="${q}" data-type="recall" data-for="officer">Repeat call</button>
+      <button class="back" data-q="${q}" data-type="back" data-for="officer"></button>
+      <div class="stub" id="stub${q}" aria-live="polite" data-for="desk"></div>
+      <div class="line" data-for="officer">
         <h3 id="lineh${q}">Waiting in line</h3>
         <p>Click a number to skip it. Click it again to bring it back.</p>
         <ol id="line${q}" aria-labelledby="lineh${q}"></ol>
       </div>
-      <form class="insert" data-q="${q}">
+      <form class="insert" data-q="${q}" data-for="desk">
         <label for="pick${q}">Add a number to the line</label>
         <select id="pick${q}" required></select>
         <button type="submit">Add to line</button>
       </form>
-      <details class="missing">
+      <details class="missing" data-for="desk">
         <summary id="missingh${q}">Missing stubs (settings)</summary>
         <p>Numbers marked here are never issued or called. The list stays when you start over.</p>
         <ol id="missing${q}" aria-labelledby="missingh${q}"></ol>
       </details>
-      <button class="reset" data-q="${q}" data-type="reset">Start over at ${q}1</button>
+      <button class="reset" data-q="${q}" data-type="reset" data-for="officer">Start over at ${q}1</button>
     </div>
   </section>`).join('');
 

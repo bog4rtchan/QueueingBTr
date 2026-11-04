@@ -41,6 +41,12 @@ second screen, open `http://localhost:3000/display.html` on it, then click the p
 
 Several control pages can be open at once (different PCs or tabs); each one shows the others' changes within about a second.
 
+**Two screens:** the front desk issues numbers and the officers call them, so each can open its own page:
+
+- **Queue Issuance** (front desk): `/control.html?for=desk` shows Issue (big), the ticket box, Add a number to the line and Missing stubs.
+- **Control** (officers): `/control.html?for=officer` shows the counter picker, Call, Repeat call, Back, the waiting line (skip), Start over and the TV voice.
+- `/control.html` on its own still shows everything (handy on a single PC). The header links (Control, Queue Issuance, History, Display) switch between pages, and all of them stay in sync.
+
 | Button | What it does |
 |--------|--------------|
 | **Issue A8** | Issues the next ticket. Tell or write it for the client. |
