@@ -39,6 +39,8 @@ second screen, open `http://localhost:3000/display.html` on it, then click the p
 
 ## Controls (per queue)
 
+Several control pages can be open at once (different PCs or tabs); each one shows the others' changes within about a second.
+
 | Button | What it does |
 |--------|--------------|
 | **Issue A8** | Issues the next ticket. Tell or write it for the client. |

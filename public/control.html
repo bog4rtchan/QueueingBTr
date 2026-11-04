@@ -167,6 +167,10 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
 const btn = (q, type) => el.querySelector(`[data-q="${q}"][data-type="${type}"]`);
 
 function render() {
+  // Lists and the dropdown are rebuilt below, so remember what had keyboard focus and restore it after.
+  const f = document.activeElement;
+  const refocus = f?.dataset?.number ? `[data-q="${f.dataset.q}"][data-type="${f.dataset.type}"][data-number="${f.dataset.number}"]`
+    : f?.tagName === 'SELECT' ? `#${f.id}` : null;
   for (const q of Object.keys(QUEUES)) {
     const { issued, serving, waiting, skipped, missing } = state[q];
     document.getElementById(`serving${q}`).textContent = serving ? q + serving : '–';
@@ -211,6 +215,26 @@ function render() {
     if (kept && !pick.querySelector(`option[value="${kept}"]`)?.disabled) pick.value = kept;
     btn(q, 'recall').disabled = serving === 0;
   }
+  if (refocus && document.activeElement !== f) el.querySelector(refocus)?.focus();
+}
+
+// Every state update (own actions and polls) goes through here. Redraw only on a real change:
+// redrawing rebuilds the dropdown, which would close it if it's open.
+let lastJson = '';
+function setState(next) {
+  const json = JSON.stringify(next);
+  if (json === lastJson) return;
+  const prev = state;
+  state = next;
+  lastJson = json;
+  render();
+  // A call or repeat (from this panel or another one) slides the number in.
+  for (const q of Object.keys(QUEUES)) {
+    if (prev && next[q].calls > prev[q].calls) {
+      const num = document.getElementById(`serving${q}`);
+      num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
+    }
+  }
 }
 
 const unlock = document.getElementById('unlock');
@@ -226,7 +250,7 @@ const chosenCounter = (q) => Number(el.querySelector(`input[name="counter${q}"]:
 el.addEventListener('change', (e) => {
   if (!e.target.name?.startsWith('counter')) return;
   localStorage.setItem(e.target.name, e.target.value);
-  render();
+  if (state) render(); // before the first poll there is nothing to draw yet
 });
 for (const q of Object.keys(QUEUES)) {
   const saved = localStorage.getItem(`counter${q}`);
@@ -251,8 +275,7 @@ async function send(queue, type, number) {
   }
   if (!res.ok) { warn.textContent = 'The server rejected that action: ' + (await res.json()).error; return; }
   warn.textContent = '';
-  state = await res.json();
-  render();
+  setState(await res.json());
   const q = state[queue];
   const stub = document.getElementById(`stub${queue}`);
   if (type === 'add') stub.innerHTML = `<strong>${queue}${q.issued}</strong><span>Give the client this number.</span>`;
@@ -261,10 +284,6 @@ async function send(queue, type, number) {
     const pos = q.waiting.indexOf(number) + 1;
     const where = pos === 1 ? 'First in line.' : `${pos}${['th', 'st', 'nd', 'rd'][pos % 100 > 10 && pos % 100 < 14 ? 0 : pos % 10] || 'th'} in line.`;
     stub.innerHTML = `<strong>${queue}${number}</strong><span>Added. ${where}</span>`;
-  }
-  if (type === 'next' || type === 'recall') {
-    const num = document.getElementById(`serving${queue}`);
-    num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
   }
 }
 
@@ -302,8 +321,6 @@ el.addEventListener('click', (e) => {
   if (b.dataset.type === 'reset') return askStartOver(b);
   const number = b.dataset.number ? Number(b.dataset.number) : undefined;
   send(b.dataset.q, b.dataset.type, number)
-    // The waiting line is redrawn, so put keyboard focus back on the same number.
-    .then(() => number && el.querySelector(`[data-q="${b.dataset.q}"][data-type="${b.dataset.type}"][data-number="${number}"]`)?.focus())
     .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'));
 });
 
@@ -315,8 +332,21 @@ el.addEventListener('submit', (e) => {
     .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'));
 });
 
-fetch('/state').then((r) => r.json()).then((s) => { state = s; render(); })
-  .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'));
+// Other control panels change the queue too: check the server every second, like the TV display.
+// shortcut: polling, not push. Switch to Server-Sent Events if many panels or a slow host make it heavy.
+const OFFLINE = 'Can’t reach the server. Start it with: node server.js';
+async function poll() {
+  if (document.hidden) return; // background tabs don't poll; they catch up when shown
+  try {
+    setState(await (await fetch('/state', { cache: 'no-store' })).json());
+    if (warn.textContent === OFFLINE) warn.textContent = '';
+  } catch {
+    warn.textContent = OFFLINE;
+  }
+}
+poll();
+setInterval(poll, 1000);
+document.addEventListener('visibilitychange', poll);
 </script>
 </body>
 </html>
