@@ -55,6 +55,14 @@
   .line button:hover { background: #fff; }
   .line button[aria-pressed="true"] { border-style: dashed; color: #6B7A85; text-decoration: line-through; }
 
+  /* Put a specific number into the line, e.g. a client whose stub went missing. */
+  .insert { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+  .insert label { flex: 1 0 100%; font-weight: 600; }
+  .insert select { font: 700 1.3rem/1 var(--display); padding: .5rem .6rem; border: 2px solid var(--ink); border-radius: 6px; background: #fff; color: var(--ink); min-width: 12rem; }
+  .insert select:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .insert button { padding: .6rem 1.2rem; }
+  .insert button:hover { background: #fff; }
+
   /* Start-over confirmation: a toast instead of a blocking browser popup. */
   .toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); width: min(34rem, calc(100% - 2rem));
     background: var(--ink); color: var(--paper); border-left: 6px solid var(--lane); border-radius: 6px; padding: 1rem 1.1rem;
@@ -118,6 +126,11 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
         <p>Click a number to skip it. Click it again to bring it back.</p>
         <ol id="line${q}" aria-labelledby="lineh${q}"></ol>
       </div>
+      <form class="insert" data-q="${q}">
+        <label for="pick${q}">Add a number to the line (missing stub)</label>
+        <select id="pick${q}" required></select>
+        <button type="submit">Add to line</button>
+      </form>
       <button class="reset" data-q="${q}" data-type="reset">Start over at ${q}1</button>
     </div>
   </section>`).join('');
@@ -133,7 +146,8 @@ function render() {
     // Buttons name the exact number they act on, so staff never work it out.
     btn(q, 'next').textContent = waiting.length ? `Call ${q}${waiting[0]}` : 'No one waiting';
     btn(q, 'next').disabled = waiting.length === 0;
-    const line = [...waiting, ...skipped].sort((a, b) => a - b);
+    // Real calling order (re-added numbers can be first), then skipped ones.
+    const line = [...waiting, ...skipped];
     document.getElementById(`line${q}`).innerHTML = line.length
       ? line.map((n) => {
           const off = skipped.includes(n);
@@ -142,6 +156,15 @@ function render() {
         }).join('')
       : '<li>No one is waiting.</li>';
     btn(q, 'add').textContent = `Issue ${q}${issued + 1}`;
+    // Dropdown: 1 to at least 30. Numbers already waiting or on screen can't be added again.
+    const pick = document.getElementById(`pick${q}`), kept = pick.value;
+    let options = '<option value="">Choose a number</option>';
+    for (let n = 1; n <= Math.max(30, issued); n++) {
+      const note = n === serving ? ' (now serving)' : waiting.includes(n) ? ' (in line)' : '';
+      options += `<option value="${n}"${note ? ' disabled' : ''}>${q}${n}${note}</option>`;
+    }
+    pick.innerHTML = options;
+    if (kept && !pick.querySelector(`option[value="${kept}"]`)?.disabled) pick.value = kept;
     btn(q, 'recall').disabled = serving === 0;
   }
 }
@@ -178,6 +201,11 @@ async function send(queue, type, number) {
   const stub = document.getElementById(`stub${queue}`);
   if (type === 'add') stub.innerHTML = `<strong>${queue}${q.issued}</strong><span>Give the client this number.</span>`;
   if (type === 'reset') stub.innerHTML = '';
+  if (type === 'insert') {
+    const pos = q.waiting.indexOf(number) + 1;
+    const where = pos === 1 ? 'First in line.' : `${pos}${['th', 'st', 'nd', 'rd'][pos % 100 > 10 && pos % 100 < 14 ? 0 : pos % 10] || 'th'} in line.`;
+    stub.innerHTML = `<strong>${queue}${number}</strong><span>Added. ${where}</span>`;
+  }
   if (type === 'next' || type === 'recall') {
     const num = document.getElementById(`serving${queue}`);
     num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
@@ -214,12 +242,20 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !toast.h
 
 el.addEventListener('click', (e) => {
   const b = e.target.closest('button');
-  if (!b) return;
+  if (!b?.dataset.type) return; // e.g. the "Add to line" submit button, handled below
   if (b.dataset.type === 'reset') return askStartOver(b);
   const number = b.dataset.number ? Number(b.dataset.number) : undefined;
   send(b.dataset.q, b.dataset.type, number)
     // The waiting line is redrawn, so put keyboard focus back on the same number.
     .then(() => number && el.querySelector(`[data-q="${b.dataset.q}"][data-number="${number}"]`)?.focus())
+    .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'));
+});
+
+el.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const form = e.target, q = form.dataset.q, number = Number(form.querySelector('select').value);
+  send(q, 'insert', number)
+    .then(() => { form.querySelector('select').value = ''; })
     .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'));
 });
 

@@ -44,6 +44,7 @@ second screen, open `http://localhost:3000/display.html` on it, then click the p
 | **Issue A8** | Issues the next ticket. Tell or write it for the client. |
 | **Call A5** | Calls the next waiting number, plays the voice, and updates the TV. |
 | **Repeat call** | Replays the voice for the current number. |
+| **Add a number to the line** | For a missing stub: pick the number from the dropdown and press Add to line. A number lower than the one now serving goes first in line; any other number slots into number order. |
 | **Waiting in line** | Click a number to skip it (client left); Call jumps over it and the TV stops listing it. Click it again to bring it back. |
 | **Start over at A1** | Starts the queue over from A1 / C1 after you confirm. Use at the start of the day. |
 
