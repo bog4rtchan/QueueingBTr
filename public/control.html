@@ -245,6 +245,8 @@ function setState(next) {
   render();
   // A call or repeat (from this panel or another one) slides the number in.
   for (const q of Object.keys(QUEUES)) {
+    // Started over (here, on another panel, or by the daily restart): the last ticket shown is no longer valid.
+    if (prev && next[q].issued < prev[q].issued) document.getElementById(`stub${q}`).innerHTML = '';
     if (prev && next[q].calls > prev[q].calls) {
       const num = document.getElementById(`serving${q}`);
       num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');

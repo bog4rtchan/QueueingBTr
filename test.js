@@ -1,5 +1,5 @@
 const assert = require('node:assert');
-const { apply, initial, view } = require('./queue');
+const { apply, initial, view, rollover } = require('./queue');
 
 let s = initial();
 assert.strictEqual(apply(s, { queue: 'A', type: 'next', counter: 1 }), s, 'next with nobody waiting is a no-op');
@@ -184,5 +184,20 @@ assert.deepStrictEqual([s.A.serving, s.A.line], [2, [3, 4]], 'Call after back br
 s = apply(s, { queue: 'A', type: 'reset' });
 assert.deepStrictEqual(s.A.previous, [], 'Start over clears the back stack');
 assert.deepStrictEqual(view({ A: { issued: 1, serving: 1, calls: 1 }, C: {} }).A.previous, [], 'old state has no previous list');
+
+// Daily restart: queues and history start over on a new day, lost stubs and voice stay.
+s = initial();
+s = rollover(s, '2026-11-04');
+assert.strictEqual(s.day, '2026-11-04', 'state without a day adopts today without wiping');
+s = apply(s, { queue: 'A', type: 'missing', number: 2 });
+s = apply(s, { queue: 'A', type: 'add' });
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
+s = apply(s, { type: 'voice', voice: 'Halliday' });
+assert.strictEqual(rollover(s, '2026-11-04'), s, 'same day: unchanged');
+const kept = rollover({ A: { issued: 3, serving: 1, calls: 1 }, C: {} }, '2026-11-04');
+assert.deepStrictEqual([kept.A.issued, kept.A.serving], [3, 1], 'old saved queue survives the upgrade');
+s = rollover(s, '2026-11-05');
+assert.deepStrictEqual([s.day, s.A.issued, s.A.serving, s.A.missing, s.history, s.voice], ['2026-11-05', 0, 0, [2], [], 'Halliday']);
+assert.deepStrictEqual(s.C, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [], previous: [] });
 
 console.log('all queue tests passed');

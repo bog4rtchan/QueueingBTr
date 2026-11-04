@@ -52,8 +52,10 @@ Several control pages can be open at once (different PCs or tabs); each one show
 | **Waiting in line** | Click a number to skip it (client left); Call jumps over it and the TV stops listing it. Click it again to bring it back. |
 | **TV voice: Woman / Man** | Picks the voice the TV announces with (Woman = Valkyrie, Man = Halliday). One setting for the whole office: changing it on one control panel changes it everywhere. |
 | **Back to A4** | Undoes a call: the TV shows and announces the previous number again (at its counter), and the number that was on screen goes back to the front of the line. Press again to step further back, up to the last Start over. |
-| **History** | Link at the top of the control page (or `/history.html`). A separate table for ATAP and for CL (side by side on a wide screen), each topped by a card counting this round's tickets (issued, waiting, called, skipped). One row per ticket, newest first: circles for Issued, On queue and Called (green ✓ done, gray ring not yet, red ✕ when skipped or still waiting at Start over) and the counter it was called to. Each Start over is a divider row. Missing stubs aren't listed. Updates on its own every 2 seconds. Keeps the last 2000 entries; Start over doesn't clear it. On Render without Upstash it's lost whenever the server restarts, like the queue. |
-| **Start over at A1** | Starts the queue over from A1 / C1 after you confirm. Use at the start of the day. |
+| **History** | Link at the top of the control page (or `/history.html`). A separate table for ATAP and for CL (side by side on a wide screen), each topped by a card counting this round's tickets (issued, waiting, called, skipped). One row per ticket, newest first: circles for Issued, On queue and Called (green ✓ done, gray ring not yet, red ✕ when skipped or still waiting at Start over) and the counter it was called to. Each Start over is a divider row. Filter buttons (All / Done / Not yet / Skipped) narrow both tables and double as the legend. Missing stubs aren't listed. Updates on its own every 2 seconds. Keeps the last 2000 entries; Start over doesn't clear it. On Render without Upstash it's lost whenever the server restarts, like the queue. |
+| **Start over at A1** | Starts the queue over from A1 / C1 after you confirm. Not needed each morning: the system restarts by itself every day (below). |
+
+**Daily restart:** at midnight (Philippine time) both queues start over at A1 / C1 and the history is cleared, so each day begins fresh. It happens on the first visit or poll after midnight, so an open TV triggers it right away. Missing stubs and the TV voice are kept. The history page shows the current date at the top left. To use another time zone, set `TIMEZONE` (e.g. `Asia/Singapore`).
 
 ## Voice clips
 
@@ -94,6 +96,7 @@ Render runs `server.js`; Upstash Redis keeps the queue numbers (Render's free di
    - **Environment variables:**
      - `CONTROL_PASSWORD`: a strong password (without it the buttons stay disabled)
      - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: from step 1
+     - `TIMEZONE`: optional, defaults to `Asia/Manila` (Render's clock is UTC; this decides when the day restarts)
    - Create the service. Render gives you `https://<name>.onrender.com`.
 3. Open `https://<name>.onrender.com/control.html` on the office PC and enter the password once (remembered on that PC).
    The TV opens `https://<name>.onrender.com/display.html` (no password, view only).

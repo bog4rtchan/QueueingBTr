@@ -129,6 +129,16 @@ function apply(state, { queue, type, number, counter, voice } = {}, now = Date.n
   return { ...state, [queue]: q, history: [...(state.history ?? []), entry].slice(-HISTORY_MAX) };
 }
 
+// A new office day (`today` = 'YYYY-MM-DD'): both queues start over and the history is cleared.
+// Lost stubs stay marked, like with Start over. State saved before this existed has no day: adopt it, don't wipe it.
+function rollover(state, today) {
+  if (state.day === today) return state;
+  if (!state.day) return { ...state, day: today };
+  const next = { ...state, day: today, history: [] };
+  for (const k of QUEUES) next[k] = { ...fresh(), missing: normalize(state[k]).missing };
+  return next;
+}
+
 // What pages receive: stored state plus `waiting` (the line), the name pages already use.
 const view = (state) => ({
   ...Object.fromEntries(QUEUES.map((k) => {
@@ -138,4 +148,4 @@ const view = (state) => ({
   voice: VOICES.includes(state.voice) ? state.voice : VOICES[0], // older saved state has no voice
 }); // history is left out: /state is polled every second, the log is served by /history instead
 
-module.exports = { apply, initial, view };
+module.exports = { apply, initial, view, rollover };

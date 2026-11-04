@@ -2,9 +2,12 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { apply, initial, view } = require('./queue');
+const { apply, initial, view, rollover } = require('./queue');
 
 const PORT = process.env.PORT || 3000;
+// The queues and history start over each day at midnight in the office's time zone (Render runs on UTC).
+const TIMEZONE = process.env.TIMEZONE || 'Asia/Manila';
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date()); // YYYY-MM-DD
 // localhost only by default; HOST=0.0.0.0 for the LAN. Render (sets RENDER) must listen publicly.
 const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
 const PUBLIC = path.join(__dirname, 'public');
@@ -58,6 +61,12 @@ function saveState() {
 
 let state;
 
+// Checked on every request, so the first poll after midnight starts the new day.
+function newDay() {
+  const next = rollover(state, today());
+  if (next !== state) { state = next; saveState(); }
+}
+
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -65,9 +74,10 @@ const json = (res, code, body) => {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
+  newDay();
 
   if (url.pathname === '/state' && req.method === 'GET') return json(res, 200, view(state));
-  if (url.pathname === '/history' && req.method === 'GET') return json(res, 200, state.history ?? []);
+  if (url.pathname === '/history' && req.method === 'GET') return json(res, 200, { day: state.day, entries: state.history ?? [] });
 
   if (url.pathname === '/action' && req.method === 'POST') {
     if (!allowed(req)) {
@@ -96,9 +106,10 @@ const server = http.createServer((req, res) => {
 
 loadState().then((loaded) => {
   state = loaded;
+  newDay(); // also fails fast on a bad TIMEZONE
   server.listen(PORT, HOST, () => {
     if (!LOCAL_ONLY && !PASSWORD) console.warn('CONTROL_PASSWORD is not set: controls are disabled until it is.');
-    console.log(`State: ${UPSTASH_URL ? 'Upstash Redis' : STATE_FILE}`);
+    console.log(`State: ${UPSTASH_URL ? 'Upstash Redis' : STATE_FILE} · day ${state.day} (${TIMEZONE})`);
     console.log(`Control: http://localhost:${PORT}/control.html`);
     console.log(`Display: http://localhost:${PORT}/display.html`);
   });
