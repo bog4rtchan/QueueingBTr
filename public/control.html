@@ -127,7 +127,7 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
         <ol id="line${q}" aria-labelledby="lineh${q}"></ol>
       </div>
       <form class="insert" data-q="${q}">
-        <label for="pick${q}">Add a number to the line (missing stub)</label>
+        <label for="pick${q}">Add a number to the line</label>
         <select id="pick${q}" required></select>
         <button type="submit">Add to line</button>
       </form>
