@@ -51,7 +51,7 @@ Several control pages can be open at once (different PCs or tabs); each one show
 | **Missing stubs (settings)** | Per queue: mark numbers whose stub is lost or damaged. They are never issued or called (Issue jumps over them). The list stays after Start over; unmark a number when its stub is back. |
 | **Waiting in line** | Click a number to skip it (client left); Call jumps over it and the TV stops listing it. Click it again to bring it back. |
 | **TV voice: Woman / Man** | Picks the voice the TV announces with (Woman = Valkyrie, Man = Halliday). One setting for the whole office: changing it on one control panel changes it everywhere. |
-| **History** | Bottom of the control page: every Issue, Call (with counter), Repeat call, skip, add to line, missing stub and Start over, newest first, with the time. Filter by ATAP or CL. Keeps the last 2000 entries; Start over doesn't clear it. On Render without Upstash it's lost whenever the server restarts, like the queue. |
+| **History** | Link at the top of the control page (or `/history.html`). A separate page listing every Issue, Call (with counter), Repeat call, skip, add to line, missing stub and Start over, newest first, with the time and state. Updates on its own every 2 seconds. Filter by ATAP or CL. Keeps the last 2000 entries; Start over doesn't clear it. On Render without Upstash it's lost whenever the server restarts, like the queue. |
 | **Start over at A1** | Starts the queue over from A1 / C1 after you confirm. Use at the start of the day. |
 
 ## Voice clips
