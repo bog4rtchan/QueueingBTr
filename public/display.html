@@ -22,6 +22,12 @@
   .wait b { font: 700 5vh/1 var(--display); }
   #offline { position: fixed; bottom: 1.5vh; right: 1.5vw; background: var(--stop); color: #fff; padding: .6vh 1vw; font-size: 2.2vh; }
   #offline:empty { display: none; }
+  /* Browsers only play sound after a click on the page, so the display starts behind this button. */
+  #sound { position: fixed; inset: 0; width: 100%; border: 0; border-radius: 0; background: rgb(19 35 58 / .92); color: var(--paper);
+    font: 700 9vh/1.1 var(--display); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; }
+  #sound small { font: 400 3vh/1.4 var(--text); }
+  #sound:focus-visible { outline: .6vh solid var(--cl); outline-offset: -1.2vh; }
+  #sound[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -31,7 +37,40 @@
   <section class="lane-C"><h2>CL issuance</h2><p class="num" aria-live="polite"><span id="numC">–</span></p><footer><p class="next">Up next<b id="nextC"></b></p><p class="wait"><b id="waitC">0</b> waiting</p></footer></section>
 </main>
 <div id="offline" role="status"></div>
+<button id="sound" type="button" autofocus>Turn on sound<small>Click once, or press OK on the TV remote</small></button>
 <script>
+// Voice: chained clips from public/audio, read digit by digit (C12 = "C, one, two").
+// clip = the recording of the queue's name, played before its number.
+const QUEUE_CLIP = { A: 'Authority to Accept Payment', C: 'Confirmation Letter' };
+const clips = {};
+const clip = (name) => clips[name] ??= Object.assign(new Audio(`audio/${name}.wav`), { preload: 'auto' });
+['chime', 'Now Serving', ...Object.values(QUEUE_CLIP), 'A', 'C', ...'0123456789'].forEach(clip);
+
+const offline = document.getElementById('offline');
+// Plays one clip; a missing/broken clip is skipped so the rest of the call still plays.
+const playOne = (name) => new Promise((done) => {
+  const a = clip(name);
+  const skip = () => { if (name !== 'chime') offline.textContent = `Voice file missing: public/audio/${name}.wav`; done(); };
+  if (a.error) return skip();
+  a.currentTime = 0;
+  a.onended = done;
+  a.onerror = skip;
+  a.play().catch(skip);
+});
+let speaking = Promise.resolve(); // announcements queue up instead of overlapping
+const announce = (q, n) => {
+  // e.g. A12: Now Serving → Authority to Accept Payment → A → 1 → 2
+  speaking = speaking.then(async () => {
+    for (const name of ['chime', 'Now Serving', QUEUE_CLIP[q], q, ...String(n)]) await playOne(name);
+  });
+};
+
+const sound = document.getElementById('sound');
+sound.addEventListener('click', () => {
+  sound.hidden = true; // this click is what lets the page play audio from now on
+  document.documentElement.requestFullscreen?.();
+});
+
 // shortcut: polls every second instead of a push connection; fine for one TV on a LAN.
 const lastCalls = {};
 async function tick() {
@@ -45,20 +84,21 @@ async function tick() {
       // The next two waiting tickets (skipped ones are already left out by the server), e.g. A5 A6.
       const upNext = waiting.slice(0, 2).map((n) => `<span>${q}${n}</span>`);
       document.getElementById('next' + q).innerHTML = upNext.join('') || '<span>–</span>';
-      // A new call (or repeat) slides the number up like a ticket being pulled.
+      // A new call (or repeat) slides the number up like a ticket being pulled, and is announced.
       if (lastCalls[q] !== undefined && calls > lastCalls[q]) {
         num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
+        announce(q, serving);
       }
       lastCalls[q] = calls;
     }
-    document.getElementById('offline').textContent = '';
+    if (offline.textContent.startsWith('Lost')) offline.textContent = ''; // keep missing-voice warnings visible
   } catch {
-    document.getElementById('offline').textContent = 'Lost connection to the queue PC. Retrying…';
+    offline.textContent = 'Lost connection to the queue server. Retrying…';
   }
 }
 tick();
 setInterval(tick, 1000);
-document.body.addEventListener('click', () => document.documentElement.requestFullscreen?.());
+document.querySelector('main').addEventListener('click', () => document.documentElement.requestFullscreen?.());
 </script>
 </body>
 </html>

@@ -49,8 +49,9 @@ second screen, open `http://localhost:3000/display.html` on it, then click the p
 
 ## Voice clips
 
-The voice plays from the **PC** (TV browsers often block sound). With HDMI, the sound comes out
-of the TV speakers.
+The voice plays from the **display page** (the TV). Browsers only allow sound after a click, so the display
+opens with a **Turn on sound** button: click it once (or press OK on the TV remote) each time the page is opened.
+It also switches to fullscreen.
 
 The recordings live in `public/audio/` as WAV files, named exactly like this:
 
@@ -64,7 +65,7 @@ The recordings live in `public/audio/` as WAV files, named exactly like this:
 | `0.wav` … `9.wav` | "zero" … "nine" |
 | `chime.wav` | optional "ding" before each call |
 
-All of them are preloaded when the control page opens. Numbers are read digit by digit:
+All of them are preloaded when the display page opens. Numbers are read digit by digit:
 
 - A12 plays `Now Serving → Authority to Accept Payment → A → 1 → 2`
 - C7 plays `Now Serving → Confirmation Letter → C → 7`
@@ -93,7 +94,7 @@ Things to know:
 - Free Render services **sleep after ~15 minutes with no visitors**. The open TV display keeps it awake, but the first
   load in the morning can take 30–60 seconds.
 - If the Upstash keys are wrong, the server refuses to start (so it never overwrites the saved queue). Check Render's logs.
-- The voice plays from the control page's PC, so that PC needs speakers. If the office internet goes down, the queue stops.
+- The voice plays on the TV display page (click **Turn on sound** once after opening it). If the office internet goes down, the queue stops.
 
 ## Test
 

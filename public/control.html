@@ -92,31 +92,9 @@
 </div>
 
 <script>
-// clip = the recording of the queue's name, played before its number.
-const QUEUES = { A: { name: 'ATAP issuance', clip: 'Authority to Accept Payment' }, C: { name: 'CL issuance', clip: 'Confirmation Letter' } };
-const clips = {};
-const clip = (name) => clips[name] ??= Object.assign(new Audio(`audio/${name}.wav`), { preload: 'auto' });
-// Numbers are read digit by digit (C12 = "C, one, two"), so 0–9 covers every number.
-['chime', 'Now Serving', 'Authority to Accept Payment', 'Confirmation Letter', 'A', 'C', ...'0123456789'].forEach(clip);
-
+const QUEUES = { A: { name: 'ATAP issuance' }, C: { name: 'CL issuance' } };
+// The TV display plays the announcements; this page only sends actions.
 const warn = document.getElementById('warn');
-// Plays one clip; a missing/broken clip is skipped so the rest of the call still plays.
-const playOne = (name) => new Promise((done) => {
-  const a = clip(name);
-  const skip = () => { if (name !== 'chime') warn.textContent = `Voice file missing: public/audio/${name}.wav. The number still changed on the TV.`; done(); };
-  if (a.error) return skip();
-  a.currentTime = 0;
-  a.onended = done;
-  a.onerror = skip;
-  a.play().catch(skip);
-});
-let speaking = Promise.resolve(); // announcements queue up instead of overlapping
-const announce = (q, n) => {
-  speaking = speaking.then(async () => {
-    // e.g. A12: Now Serving → Authority to Accept Payment → A → 1 → 2
-    for (const name of ['chime', 'Now Serving', QUEUES[q].clip, q, ...String(n)]) await playOne(name);
-  });
-};
 
 let state;
 const el = document.getElementById('queues');
@@ -203,7 +181,6 @@ async function send(queue, type, number) {
   if (type === 'next' || type === 'recall') {
     const num = document.getElementById(`serving${queue}`);
     num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
-    announce(queue, q.serving);
   }
 }
 
