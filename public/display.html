@@ -88,18 +88,21 @@ async function tick() {
     const s = await (await fetch('/state', { cache: 'no-store' })).json();
     if (VOICES.includes(s.voice)) voice = s.voice;
     for (const q of ['A', 'C']) {
-      const { serving, calls, waiting, counter } = s[q];
+      const { serving, calls, waiting, counter, skipped } = s[q];
+      // Internal numbers count past the stub set (31, 32…); the TV shows and says the stub: 31 → A1.
+      const stub = (n) => ((n - 1) % s.stubs) + 1;
+      const shown = serving && !skipped.includes(serving) ? serving : 0; // skipped while on screen (didn't come): blank
       const num = document.getElementById('num' + q);
-      num.textContent = serving ? q + serving : '–';
-      document.getElementById('counter' + q).textContent = serving && counter ? `Counter ${counter}` : '';
+      num.textContent = shown ? q + stub(shown) : '–';
+      document.getElementById('counter' + q).textContent = shown && counter ? `Counter ${counter}` : '';
       document.getElementById('wait' + q).textContent = waiting.length;
       // The next two waiting tickets (skipped ones are already left out by the server), e.g. A5 A6.
-      const upNext = waiting.slice(0, 2).map((n) => `<span>${q}${n}</span>`);
+      const upNext = waiting.slice(0, 2).map((n) => `<span>${q}${stub(n)}</span>`);
       document.getElementById('next' + q).innerHTML = upNext.join('') || '<span>–</span>';
       // A new call (or repeat) slides the number up like a ticket being pulled, and is announced.
       if (lastCalls[q] !== undefined && calls > lastCalls[q]) {
         num.classList.remove('pulled'); void num.offsetWidth; num.classList.add('pulled');
-        announce(q, serving, counter);
+        announce(q, stub(serving), counter);
       }
       lastCalls[q] = calls;
     }

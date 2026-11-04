@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { apply, initial, view, rollover } = require('./queue');
+const { apply, initial, view, rollover, STUBS } = require('./queue');
 
 const PORT = process.env.PORT || 3000;
 // The queues and history start over each day at midnight in the office's time zone (Render runs on UTC).
@@ -77,7 +77,7 @@ const server = http.createServer((req, res) => {
   newDay();
 
   if (url.pathname === '/state' && req.method === 'GET') return json(res, 200, view(state));
-  if (url.pathname === '/history' && req.method === 'GET') return json(res, 200, { day: state.day, entries: state.history ?? [] });
+  if (url.pathname === '/history' && req.method === 'GET') return json(res, 200, { day: state.day, stubs: STUBS, entries: state.history ?? [] });
 
   if (url.pathname === '/action' && req.method === 'POST') {
     if (!allowed(req)) {

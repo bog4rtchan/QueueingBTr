@@ -16,7 +16,6 @@
   body[data-role="desk"] [data-for="officer"], body[data-role="officer"] [data-for="desk"] { display: none !important; }
   body[data-role="desk"] button.issue { grid-column: 1 / -1; font: 700 2.4rem/1 var(--display); padding: 1.4rem; box-shadow: 0 6px 0 #000; }
   body[data-role="desk"] .stub strong { font-size: 4rem; }
-  body[data-role="officer"] button.back { grid-column: auto; } /* Issue is hidden: Repeat and Back share the row */
   #warn { margin: 0; padding: .6rem 1.5rem; background: #FDECEA; color: var(--stop); font-weight: 600; }
   #warn:empty { display: none; }
   /* Password bar: only shown when the server asks for the control password (cloud/LAN). */
@@ -69,7 +68,9 @@
   button.issue:not(:disabled):hover { background: #1E3350; box-shadow: 0 5px 0 #000; }
   button.issue:not(:disabled):active { box-shadow: 0 1px 0 #000; }
   button.repeat:not(:disabled):hover, button.back:not(:disabled):hover { background: #F6F8F6; }
-  button.back { grid-column: 1 / -1; }
+  button.noshow:not(:disabled) { color: var(--stop); border-color: var(--stop); box-shadow: 0 4px 0 var(--stop); }
+  button.noshow:not(:disabled):hover { background: #FDECEA; box-shadow: 0 5px 0 var(--stop); }
+  button.noshow:not(:disabled):active { box-shadow: 0 1px 0 var(--stop); }
   button.reset { grid-column: 1 / -1; justify-self: start; margin-top: .5rem; padding: .6rem 1.1rem; font-size: 1rem; color: var(--stop); border-color: var(--stop); box-shadow: 0 4px 0 var(--stop); }
   button.reset:not(:disabled):hover { background: #FDECEA; box-shadow: 0 5px 0 var(--stop); }
   button.reset:not(:disabled):active { box-shadow: 0 1px 0 var(--stop); }
@@ -195,6 +196,7 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
       <button class="call" data-q="${q}" data-type="next" data-for="officer"></button>
       <button class="issue" data-q="${q}" data-type="add" data-for="desk"></button>
       <button class="repeat" data-q="${q}" data-type="recall" data-for="officer">Repeat call</button>
+      <button class="noshow" data-q="${q}" data-type="skip" data-for="officer"></button>
       <button class="back" data-q="${q}" data-type="back" data-for="officer"></button>
       <div class="stub" id="stub${q}" aria-live="polite" data-for="desk"></div>
       <div class="line" data-for="officer">
@@ -217,6 +219,9 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
   </section>`).join('');
 
 const btn = (q, type) => el.querySelector(`[data-q="${q}"][data-type="${type}"]`);
+// Internal numbers keep counting past the stub count (31, 32…); people only ever see the stub: 31 → A1.
+const stubOf = (n) => ((n - 1) % state.stubs) + 1;
+const label = (q, n) => q + stubOf(n);
 
 function render() {
   // Lists and the dropdown are rebuilt below, so remember what had keyboard focus and restore it after.
@@ -225,13 +230,14 @@ function render() {
     : f?.tagName === 'SELECT' ? `#${f.id}` : null;
   for (const q of Object.keys(QUEUES)) {
     const { issued, serving, waiting, skipped, missing, previous } = state[q];
-    document.getElementById(`serving${q}`).textContent = serving ? q + serving : '–';
+    const noShow = skipped.includes(serving); // skipped while on screen: the screen is blank
+    document.getElementById(`serving${q}`).textContent = serving && !noShow ? label(q, serving) : '–';
     document.getElementById(`waiting${q}`).textContent = waiting.length;
-    document.getElementById(`last${q}`).textContent = issued ? q + issued : '–';
+    document.getElementById(`last${q}`).textContent = issued ? label(q, issued) : '–';
     // Buttons name the exact number they act on, so staff never work it out.
     const counter = chosenCounter(q);
     btn(q, 'next').textContent = !waiting.length ? 'No one waiting'
-      : counter ? `Call ${q}${waiting[0]} to Counter ${counter}` : 'Choose a counter first';
+      : counter ? `Call ${label(q, waiting[0])} to Counter ${counter}` : 'Choose a counter first';
     btn(q, 'next').disabled = !waiting.length || !counter;
     // Real calling order (re-added numbers can be first), then skipped ones.
     const line = [...waiting, ...skipped];
@@ -239,16 +245,19 @@ function render() {
       ? line.map((n) => {
           const off = skipped.includes(n);
           return `<li><button type="button" data-q="${q}" data-type="skip" data-number="${n}" aria-pressed="${off}"
-            aria-label="${off ? 'Bring back' : 'Skip'} ${q}${n}">${q}${n}</button></li>`;
+            aria-label="${off ? 'Bring back' : 'Skip'} ${label(q, n)}">${label(q, n)}</button></li>`;
         }).join('')
       : '<li>No one is waiting.</li>';
+    // Same rule as the server: jump over lost stubs and stubs still held from an earlier round.
+    const held = new Set([...waiting, ...skipped, serving].filter(Boolean).map(stubOf));
     let nextIssue = issued + 1;
-    while (missing.includes(nextIssue)) nextIssue++; // the server jumps over missing stubs too
-    btn(q, 'add').textContent = `Issue ${q}${nextIssue}`;
-    // Missing-stub toggles; only the list is redrawn, so the <details> stays open or closed.
-    const top = Math.max(30, issued);
+    while (nextIssue <= issued + state.stubs && (missing.includes(stubOf(nextIssue)) || held.has(stubOf(nextIssue)))) nextIssue++;
+    const free = nextIssue <= issued + state.stubs;
+    btn(q, 'add').textContent = free ? `Issue ${label(q, nextIssue)}` : 'No free stub: all are in use';
+    btn(q, 'add').disabled = !free;
+    // Missing-stub toggles (stub numbers); only the list is redrawn, so the <details> stays open or closed.
     let chips = '';
-    for (let n = 1; n <= top; n++) {
+    for (let n = 1; n <= state.stubs; n++) {
       const on = missing.includes(n);
       chips += `<li><button type="button" data-q="${q}" data-type="missing" data-number="${n}" aria-pressed="${on}"
         aria-label="${on ? 'Unmark' : 'Mark'} ${q}${n} as missing">${q}${n}</button></li>`;
@@ -256,19 +265,26 @@ function render() {
     document.getElementById(`missing${q}`).innerHTML = chips;
     document.getElementById(`missingh${q}`).textContent = 'Missing stubs (settings)'
       + (missing.length ? `: ${missing.map((n) => q + n).join(', ')}` : '');
-    // Dropdown: 1 to at least 30. Numbers already waiting or on screen can't be added again.
+    // Dropdown: every stub. Ones waiting or on screen (in any round) can't be added again; a skipped one comes back.
     const pick = document.getElementById(`pick${q}`), kept = pick.value;
+    const has = (list, n) => list.some((x) => stubOf(x) === n);
     let options = '<option value="">Choose a number</option>';
-    for (let n = 1; n <= Math.max(30, issued); n++) {
-      const note = n === serving ? ' (now serving)' : waiting.includes(n) ? ' (in line)' : missing.includes(n) ? ' (missing stub)' : '';
-      options += `<option value="${n}"${note ? ' disabled' : ''}>${q}${n}${note}</option>`;
+    for (let n = 1; n <= state.stubs; n++) {
+      const note = serving && !noShow && stubOf(serving) === n ? ' (now serving)' : has(waiting, n) ? ' (in line)' : missing.includes(n) ? ' (missing stub)' : '';
+      const back = !note && has(skipped, n) ? ' (skipped, brings it back)' : '';
+      options += `<option value="${n}"${note ? ' disabled' : ''}>${q}${n}${note}${back}</option>`;
     }
     pick.innerHTML = options;
     if (kept && !pick.querySelector(`option[value="${kept}"]`)?.disabled) pick.value = kept;
-    btn(q, 'recall').disabled = serving === 0;
+    btn(q, 'recall').disabled = serving === 0 || noShow;
+    // Client on screen didn't come: blank the screen and keep the number as a "bring back" chip.
+    const skipBtn = el.querySelector(`.noshow[data-q="${q}"]`);
+    skipBtn.dataset.number = serving;
+    skipBtn.textContent = serving && !noShow ? `Skip ${label(q, serving)} (didn't come)` : 'Skip number on screen';
+    skipBtn.disabled = !serving || noShow;
     // Undo a call: shows the previous number again; the one on screen goes back to the front of the line.
     const prev = previous.at(-1);
-    btn(q, 'back').textContent = prev ? `Back to ${q}${prev.number}` : 'Back to previous number';
+    btn(q, 'back').textContent = prev ? `Back to ${label(q, prev.number)}` : 'Back to previous number';
     btn(q, 'back').disabled = !prev;
   }
   document.querySelector(`input[name="voice"][value="${state.voice}"]`).checked = true; // shared by all panels
@@ -337,10 +353,10 @@ async function send(queue, type, number, voice) {
   setState(await res.json());
   const q = state[queue];
   const stub = document.getElementById(`stub${queue}`);
-  if (type === 'add') stub.innerHTML = `<strong>${queue}${q.issued}</strong><span>Give the client this number.</span>`;
+  if (type === 'add') stub.innerHTML = `<strong>${label(queue, q.issued)}</strong><span>Give the client this number.</span>`;
   if (type === 'reset') stub.innerHTML = '';
   if (type === 'insert') {
-    const pos = q.waiting.indexOf(number) + 1;
+    const pos = q.waiting.findIndex((n) => stubOf(n) === number) + 1; // number = the stub picked
     const where = pos === 1 ? 'First in line.' : `${pos}${['th', 'st', 'nd', 'rd'][pos % 100 > 10 && pos % 100 < 14 ? 0 : pos % 10] || 'th'} in line.`;
     stub.innerHTML = `<strong>${queue}${number}</strong><span>Added. ${where}</span>`;
   }

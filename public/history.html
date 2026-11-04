@@ -60,6 +60,7 @@
   tr.out td { background: #FDF3F2; }
   tr.out .tag { opacity: .55; }
 
+  .tag .r { font: 700 .75rem/1 var(--text); margin-left: .3rem; vertical-align: .15rem; opacity: .85; }
   tr.reset td { background: var(--paper); padding: .4rem 1rem; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #4A5A66; }
   tr.reset:hover td { background: var(--paper); }
   .empty td { text-align: center; padding: 2rem; color: #4A5A66; }
@@ -93,13 +94,23 @@ const QUEUE_FULL = { A: 'Authority to Accept Payment', C: 'Confirmation Letter' 
 const warn = document.getElementById('warn');
 let entries = [], lastJson = '';
 
+// Ticket numbers in the log keep counting past the stub set (31 = stub A1 handed out a second time), so a reused
+// stub is its own row. Labels show the stub plus its round: A1 · R2.
+let stubs = 30;
+const stubOf = (n) => ((n - 1) % stubs) + 1;
+const roundOf = (n) => Math.ceil(n / stubs);
+
 // One row per ticket, built by replaying the server's event log. Start over adds a divider row and starts
-// fresh numbering, so each round's A1, A2… stay together. `out` = skipped, or still waiting at Start over.
+// fresh numbering; reusing the stubs adds a "Round N" divider. `out` = skipped, or still waiting at Start over.
 function tickets() {
-  const rows = [], maps = { A: new Map(), C: new Map() };
+  const rows = [], maps = { A: new Map(), C: new Map() }, rounds = { A: 1, C: 1 };
   const get = (e, n) => {
     let t = maps[e.queue].get(n);
     if (!t) {
+      if (roundOf(n) > rounds[e.queue]) {
+        rounds[e.queue] = roundOf(n);
+        rows.push({ round: rounds[e.queue], queue: e.queue });
+      }
       t = { queue: e.queue, number: n, called: false, counter: 0, out: false };
       maps[e.queue].set(n, t);
       rows.push(t);
@@ -117,11 +128,14 @@ function tickets() {
     }
     if (e.type === 'skip') get(e, e.number).out = true;
     if (e.type === 'unskip') get(e, e.number).out = false;
-    if (e.type === 'missing' && map.has(e.number)) { map.get(e.number).hidden = true; map.delete(e.number); } // missing stubs aren't listed
+    if (e.type === 'missing') { // missing stubs aren't listed (the number is a stub, in any round)
+      for (const [n, t] of map) if (stubOf(n) === e.number && !t.called) { t.hidden = true; map.delete(n); }
+    }
     if (e.type === 'reset') {
       for (const t of map.values()) if (!t.called) t.out = true; // lost their place
       rows.push({ reset: true, queue: e.queue });
       maps[e.queue] = new Map();
+      rounds[e.queue] = 1;
     }
   }
   return { rows: rows.filter((t) => !t.hidden), current: maps };
@@ -144,11 +158,14 @@ function draw() {
     const stats = [['issued', list.length], ['waiting', count((t) => !t.called && !t.out)],
       ['called', count((t) => t.called)], ['skipped', count((t) => t.out)]];
     // Start over dividers stay so each round's matches remain grouped.
-    const match = rows.filter((t) => t.queue === q && (t.reset || !only || statusOf(t) === only));
-    const body = (match.some((t) => !t.reset) ? match.reverse() : []).map((t) => {
+    const divider = (t) => t.reset || t.round;
+    const match = rows.filter((t) => t.queue === q && (divider(t) || !only || statusOf(t) === only));
+    const body = (match.some((t) => !divider(t)) ? match.reverse() : []).map((t) => {
       if (t.reset) return '<tr class="reset"><td colspan="5">Started over</td></tr>';
+      if (t.round) return `<tr class="reset"><td colspan="5">Round ${t.round} · stubs ${q}1–${q}${stubs} reused</td></tr>`;
+      const r = roundOf(t.number);
       const k = t.out ? 'skip' : 'done';
-      return `<tr${t.out ? ' class="out"' : ''}><td><span class="tag lane-${q}">${q}${t.number}</span></td>
+      return `<tr${t.out ? ' class="out"' : ''}><td><span class="tag lane-${q}">${q}${stubOf(t.number)}${r > 1 ? `<span class="r">R${r}</span>` : ''}</span></td>
         ${dot('Issued', k)}${dot('On queue', k)}${dot('Called', t.out ? 'skip' : t.called ? 'done' : 'todo')}
         <td>${t.called ? `<span class="counter">Counter ${t.counter}</span>` : '<span class="none">–</span>'}</td></tr>`;
     }).join('') || `<tr class="empty"><td colspan="5">${only ? 'No tickets with this status.' : 'No tickets yet.'}</td></tr>`;
@@ -173,6 +190,7 @@ async function poll() {
     lastJson = json;
     const data = JSON.parse(json);
     entries = data.entries;
+    stubs = data.stubs ?? stubs;
     // The server's day (office time zone), so the date flips together with the daily restart.
     const day = document.getElementById('day');
     day.dateTime = data.day;

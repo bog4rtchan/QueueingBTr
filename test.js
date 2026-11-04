@@ -1,5 +1,5 @@
 const assert = require('node:assert');
-const { apply, initial, view, rollover } = require('./queue');
+const { apply, initial, view, rollover, stub, round, STUBS } = require('./queue');
 
 let s = initial();
 assert.strictEqual(apply(s, { queue: 'A', type: 'next', counter: 1 }), s, 'next with nobody waiting is a no-op');
@@ -28,12 +28,12 @@ s = apply(s, { queue: 'C', type: 'skip', number: 4 });
 assert.deepStrictEqual(view(s).C.waiting, [3, 4, 5], 'skipping again brings the number back');
 s = apply(s, { queue: 'C', type: 'next', counter: 1 });
 assert.strictEqual(s.C.serving, 3, 'next jumps over skipped C2');
-assert.deepStrictEqual(s.C.skipped, [], 'skipped numbers behind the served one are dropped');
+assert.deepStrictEqual(s.C.skipped, [2], 'passed skipped numbers stay, so they can be brought back');
 s = apply(s, { queue: 'C', type: 'skip', number: 4 });
 s = apply(s, { queue: 'C', type: 'skip', number: 5 });
 const before = s;
 assert.strictEqual(apply(s, { queue: 'C', type: 'next', counter: 1 }), before, 'all remaining skipped = nobody waiting');
-for (const number of [3, 6, 0, '4', undefined]) {
+for (const number of [6, 0, '4', undefined]) {
   assert.throws(() => apply(s, { queue: 'C', type: 'skip', number }), /bad number/, `skip ${number} rejected`);
 }
 // state.json saved before skipping existed has no skipped list
@@ -199,5 +199,58 @@ assert.deepStrictEqual([kept.A.issued, kept.A.serving], [3, 1], 'old saved queue
 s = rollover(s, '2026-11-05');
 assert.deepStrictEqual([s.day, s.A.issued, s.A.serving, s.A.missing, s.history, s.voice], ['2026-11-05', 0, 0, [2], [], 'Halliday']);
 assert.deepStrictEqual(s.C, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [], previous: [] });
+
+// Skipping the number on screen (no-show): screen blanks, number kept as a bring-back.
+s = initial();
+for (let i = 0; i < 4; i++) s = apply(s, { queue: 'A', type: 'add' });
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
+s = apply(s, { queue: 'A', type: 'next', counter: 2 }); // A2 on screen, A1 in previous
+s = apply(s, { queue: 'A', type: 'skip', number: 2 }, 9);
+assert.deepStrictEqual([s.A.serving, s.A.skipped, s.A.line], [2, [2], [3, 4]], 'serving A2 marked skipped');
+assert.deepStrictEqual(s.history.at(-1), { at: 9, queue: 'A', type: 'skip', number: 2 });
+assert.strictEqual(apply(s, { queue: 'A', type: 'recall' }), s, 'no repeat call for a skipped number');
+const unskipped = apply(s, { queue: 'A', type: 'skip', number: 2 });
+assert.deepStrictEqual([unskipped.A.skipped, unskipped.A.line], [[], [3, 4]], 'skip again puts it back on screen');
+const backed = apply(s, { queue: 'A', type: 'back' });
+assert.deepStrictEqual([backed.A.serving, backed.A.line, backed.A.skipped], [1, [3, 4], [2]], 'back leaves a skipped no-show out of the line');
+s = apply(s, { queue: 'A', type: 'next', counter: 1 });
+assert.deepStrictEqual([s.A.serving, s.A.previous.map((p) => p.number)], [3, [1]], 'skipped no-show is not a Back target');
+s = apply(s, { queue: 'A', type: 'skip', number: 2 });
+assert.deepStrictEqual([s.A.line, s.A.skipped], [[2, 4], []], 'a returning no-show goes first in line');
+
+// 30 stubs reused: internal numbers keep counting, stub label wraps, rounds tell them apart.
+assert.deepStrictEqual([STUBS, stub(1), stub(30), stub(31), round(30), round(31), stub(62), round(62)], [30, 1, 30, 1, 1, 2, 2, 3]);
+s = initial();
+s = apply(s, { queue: 'A', type: 'missing', number: 3 });
+for (let i = 0; i < 3; i++) s = apply(s, { queue: 'A', type: 'add' });
+assert.deepStrictEqual(s.A.line, [1, 2, 4], 'missing stub 3 jumped');
+for (let i = 0; i < 26; i++) s = apply(s, { queue: 'A', type: 'add' });
+assert.strictEqual(s.A.issued, 30);
+assert.throws(() => apply(s, { queue: 'A', type: 'add' }), /no free stub/, 'all 29 usable stubs are still waiting');
+for (let i = 0; i < 3; i++) s = apply(s, { queue: 'A', type: 'next', counter: 1 }); // A1, A2, A4 called; A4 on screen
+s = apply(s, { queue: 'A', type: 'add' });
+assert.strictEqual(s.A.line.at(-1), 31, 'stub 1 again (number 31) once A1 has been served');
+s = apply(s, { queue: 'A', type: 'add' });
+assert.strictEqual(s.A.line.at(-1), 32, 'stub 2 again');
+assert.throws(() => apply(s, { queue: 'A', type: 'add' }), /no free stub/, 'stub 3 missing, 4 on screen, 5–30 waiting');
+s = apply(s, { queue: 'A', type: 'next', counter: 1 }); // A5 on screen: stub 4 handed back
+s = apply(s, { queue: 'A', type: 'add' });
+assert.strictEqual(s.A.line.at(-1), 34, 'jumps missing stub 3 to the freed stub 4');
+assert.throws(() => apply(s, { queue: 'A', type: 'insert', number: 8 }), /already in line/, 'stub 8 from round 1 is still waiting');
+assert.throws(() => apply(s, { queue: 'A', type: 'insert', number: 5 }), /now serving/);
+let r2 = initial();
+for (let i = 0; i < 30; i++) r2 = apply(r2, { queue: 'C', type: 'add' });
+for (let i = 0; i < 30; i++) r2 = apply(r2, { queue: 'C', type: 'next', counter: 1 }); // C30 on screen
+r2 = apply(r2, { queue: 'C', type: 'add' }); // stub 1 again = 31
+r2 = apply(r2, { queue: 'C', type: 'insert', number: 5 });
+assert.deepStrictEqual([r2.C.issued, r2.C.line], [35, [31, 35]], 'insert stub 5 in round 2 = number 35');
+r2 = apply(r2, { queue: 'C', type: 'skip', number: 31 });
+r2 = apply(r2, { queue: 'C', type: 'insert', number: 1 });
+assert.deepStrictEqual([r2.C.line, r2.C.skipped, r2.C.issued], [[31, 35], [], 35], 'insert of a skipped stub brings that ticket back');
+assert.throws(() => apply(s, { queue: 'A', type: 'insert', number: 31 }), /bad number/);
+assert.throws(() => apply(s, { queue: 'A', type: 'missing', number: 31 }), /bad number/);
+s = apply(s, { queue: 'A', type: 'missing', number: 6 });
+assert.ok(!s.A.line.includes(6) && s.A.line.includes(7), 'marking stub 6 missing removes it from the line');
+assert.strictEqual(view(s).stubs, 30);
 
 console.log('all queue tests passed');
