@@ -73,6 +73,16 @@
   .insert button { padding: .6rem 1.2rem; }
   .insert button:hover { background: #fff; }
 
+  /* Missing stubs: per-queue settings, collapsed by default. */
+  .missing { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: .75rem; }
+  .missing summary { font-weight: 600; cursor: pointer; }
+  .missing summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .missing p { margin: .4rem 0 .6rem; font-size: .9rem; }
+  .missing ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
+  .missing button { font: 700 1.1rem/1 var(--display); padding: .4rem .55rem; min-width: 3.2rem; border-width: 2px; }
+  .missing button:hover { background: #fff; }
+  .missing button[aria-pressed="true"] { border-style: dashed; color: #6B7A85; text-decoration: line-through; background: #E4E8E6; }
+
   /* Start-over confirmation: a toast instead of a blocking browser popup. */
   .toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); width: min(34rem, calc(100% - 2rem));
     background: var(--ink); color: var(--paper); border-left: 6px solid var(--lane); border-radius: 6px; padding: 1rem 1.1rem;
@@ -145,6 +155,11 @@ el.innerHTML = Object.entries(QUEUES).map(([q, { name }]) => `
         <select id="pick${q}" required></select>
         <button type="submit">Add to line</button>
       </form>
+      <details class="missing">
+        <summary id="missingh${q}">Missing stubs (settings)</summary>
+        <p>Numbers marked here are never issued or called. The list stays when you start over.</p>
+        <ol id="missing${q}" aria-labelledby="missingh${q}"></ol>
+      </details>
       <button class="reset" data-q="${q}" data-type="reset">Start over at ${q}1</button>
     </div>
   </section>`).join('');
@@ -153,7 +168,7 @@ const btn = (q, type) => el.querySelector(`[data-q="${q}"][data-type="${type}"]`
 
 function render() {
   for (const q of Object.keys(QUEUES)) {
-    const { issued, serving, waiting, skipped } = state[q];
+    const { issued, serving, waiting, skipped, missing } = state[q];
     document.getElementById(`serving${q}`).textContent = serving ? q + serving : '–';
     document.getElementById(`waiting${q}`).textContent = waiting.length;
     document.getElementById(`last${q}`).textContent = issued ? q + issued : '–';
@@ -171,12 +186,25 @@ function render() {
             aria-label="${off ? 'Bring back' : 'Skip'} ${q}${n}">${q}${n}</button></li>`;
         }).join('')
       : '<li>No one is waiting.</li>';
-    btn(q, 'add').textContent = `Issue ${q}${issued + 1}`;
+    let nextIssue = issued + 1;
+    while (missing.includes(nextIssue)) nextIssue++; // the server jumps over missing stubs too
+    btn(q, 'add').textContent = `Issue ${q}${nextIssue}`;
+    // Missing-stub toggles; only the list is redrawn, so the <details> stays open or closed.
+    const top = Math.max(30, issued);
+    let chips = '';
+    for (let n = 1; n <= top; n++) {
+      const on = missing.includes(n);
+      chips += `<li><button type="button" data-q="${q}" data-type="missing" data-number="${n}" aria-pressed="${on}"
+        aria-label="${on ? 'Unmark' : 'Mark'} ${q}${n} as missing">${q}${n}</button></li>`;
+    }
+    document.getElementById(`missing${q}`).innerHTML = chips;
+    document.getElementById(`missingh${q}`).textContent = 'Missing stubs (settings)'
+      + (missing.length ? `: ${missing.map((n) => q + n).join(', ')}` : '');
     // Dropdown: 1 to at least 30. Numbers already waiting or on screen can't be added again.
     const pick = document.getElementById(`pick${q}`), kept = pick.value;
     let options = '<option value="">Choose a number</option>';
     for (let n = 1; n <= Math.max(30, issued); n++) {
-      const note = n === serving ? ' (now serving)' : waiting.includes(n) ? ' (in line)' : '';
+      const note = n === serving ? ' (now serving)' : waiting.includes(n) ? ' (in line)' : missing.includes(n) ? ' (missing stub)' : '';
       options += `<option value="${n}"${note ? ' disabled' : ''}>${q}${n}${note}</option>`;
     }
     pick.innerHTML = options;
@@ -275,7 +303,7 @@ el.addEventListener('click', (e) => {
   const number = b.dataset.number ? Number(b.dataset.number) : undefined;
   send(b.dataset.q, b.dataset.type, number)
     // The waiting line is redrawn, so put keyboard focus back on the same number.
-    .then(() => number && el.querySelector(`[data-q="${b.dataset.q}"][data-number="${number}"]`)?.focus())
+    .then(() => number && el.querySelector(`[data-q="${b.dataset.q}"][data-type="${b.dataset.type}"][data-number="${number}"]`)?.focus())
     .catch(() => (warn.textContent = 'Can’t reach the server. Start it with: node server.js'));
 });
 

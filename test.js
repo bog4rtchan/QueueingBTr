@@ -12,7 +12,7 @@ assert.strictEqual(s.A.serving, 1);
 s = apply(s, { queue: 'A', type: 'recall' });
 assert.deepStrictEqual([s.A.serving, s.A.calls], [1, 2], 'recall keeps number, bumps calls');
 s = apply(s, { queue: 'A', type: 'reset' });
-assert.deepStrictEqual(s.A, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [] });
+assert.deepStrictEqual(s.A, { issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [] });
 assert.strictEqual(s.C.issued, 1, 'reset A leaves C alone');
 assert.throws(() => apply(s, { queue: 'X', type: 'add' }));
 assert.throws(() => apply(s, { queue: 'A', type: 'delete' }));
@@ -90,5 +90,35 @@ assert.strictEqual(s.C.counter, 2, 'repeat call keeps the counter');
 s = apply(s, { queue: 'C', type: 'next', counter: 3 });
 assert.deepStrictEqual([s.C.serving, s.C.counter, s.A.counter], [2, 3, 0], 'next call can go to another counter; A untouched');
 assert.strictEqual(view({ A: { issued: 1, serving: 1, calls: 1 }, C: {} }).A.counter, 0, 'old state has no counter yet');
+
+// Missing stubs: per queue, never issued or called, kept across Start over.
+s = initial();
+const issue = (q, times) => { for (let i = 0; i < times; i++) s = apply(s, { queue: q, type: 'add' }); };
+s = apply(s, { queue: 'A', type: 'missing', number: 3 });
+s = apply(s, { queue: 'A', type: 'missing', number: 5 });
+issue('A', 4);
+assert.deepStrictEqual(view(s).A.waiting, [1, 2, 4, 6], 'Issue jumps over missing A3 and A5');
+s = apply(s, { queue: 'A', type: 'missing', number: 4 });
+assert.deepStrictEqual(view(s).A.waiting, [1, 2, 6], 'marking a waiting number removes it from the line');
+s = apply(s, { queue: 'A', type: 'skip', number: 6 });
+s = apply(s, { queue: 'A', type: 'missing', number: 6 });
+assert.deepStrictEqual([s.A.skipped, s.A.missing], [[], [3, 4, 5, 6]], 'marking a skipped number clears it from skipped');
+s = apply(s, { queue: 'A', type: 'missing', number: 4 });
+assert.deepStrictEqual(view(s).A.waiting, [1, 2], 'unmarking does not put it back in line');
+s = apply(s, { queue: 'A', type: 'missing', number: 9 });
+s = apply(s, { queue: 'A', type: 'missing', number: 9 });
+issue('A', 3);
+assert.deepStrictEqual(view(s).A.waiting, [1, 2, 7, 8, 9], 'an unmarked number above issued is issued normally');
+assert.throws(() => apply(s, { queue: 'A', type: 'insert', number: 5 }), /missing stub/);
+for (const number of [0, '3', undefined]) {
+  assert.throws(() => apply(s, { queue: 'A', type: 'missing', number }), /bad number/, `missing ${number} rejected`);
+}
+s = apply(s, { queue: 'C', type: 'missing', number: 2 });
+assert.deepStrictEqual([s.A.missing, s.C.missing], [[3, 5, 6], [2]], 'separate lists for ATAP and CL');
+s = apply(s, { queue: 'A', type: 'reset' });
+assert.deepStrictEqual([s.A.issued, s.A.line, s.A.missing], [0, [], [3, 5, 6]], 'Start over keeps the missing list');
+issue('C', 2);
+assert.deepStrictEqual(view(s).C.waiting, [1, 3]);
+assert.deepStrictEqual(view({ A: { issued: 1, serving: 0, calls: 0 }, C: {} }).A.missing, [], 'old state has no missing list');
 
 console.log('all queue tests passed');

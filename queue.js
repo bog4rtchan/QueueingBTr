@@ -1,11 +1,12 @@
 // Pure queue logic: A = ATAP issuance, C = CL issuance.
 const QUEUES = ['A', 'C'];
-const TYPES = ['add', 'next', 'recall', 'reset', 'skip', 'insert'];
+const TYPES = ['add', 'next', 'recall', 'reset', 'skip', 'insert', 'missing'];
 const COUNTERS = [1, 2, 3];
 
 // line = waiting numbers in calling order; skipped = taken out of the line, can be brought back.
 // counter = which counter (1–3) the number on screen was called to; 0 = none yet.
-const fresh = () => ({ issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [] });
+// missing = stubs lost from the ticket set: never issued or called, and kept across Start over.
+const fresh = () => ({ issued: 0, serving: 0, counter: 0, calls: 0, line: [], skipped: [], missing: [] });
 const initial = () => ({ A: fresh(), C: fresh() });
 
 // State saved before the line was stored only had counters: rebuild the line from them once.
@@ -16,7 +17,7 @@ function normalize(q = {}) {
     line = [];
     for (let n = serving + 1; n <= issued; n++) if (!skipped.includes(n)) line.push(n);
   }
-  return { issued, serving, counter: q.counter ?? 0, calls: q.calls ?? 0, line: [...line], skipped };
+  return { issued, serving, counter: q.counter ?? 0, calls: q.calls ?? 0, line: [...line], skipped, missing: [...(q.missing ?? [])] };
 }
 
 // Passed numbers (below serving) go first, behind passed numbers re-added earlier;
@@ -39,7 +40,7 @@ function apply(state, { queue, type, number, counter } = {}) {
   if (!TYPES.includes(type)) throw new Error('bad type');
   const q = normalize(state[queue]);
   if (type === 'add') {
-    q.issued++;
+    do q.issued++; while (q.missing.includes(q.issued)); // jump over missing stubs
     q.line.push(q.issued);
   }
   if (type === 'next') {
@@ -52,7 +53,7 @@ function apply(state, { queue, type, number, counter } = {}) {
     q.calls++;
   }
   if (type === 'recall' && q.serving > 0) q.calls++; // display flashes and announces on calls change
-  if (type === 'reset') Object.assign(q, fresh());
+  if (type === 'reset') Object.assign(q, fresh(), { missing: q.missing }); // the stub list outlives the day
   if (type === 'skip') {
     // Toggles: skipping a skipped number brings it back, so a mis-click can be undone.
     checkNumber(number);
@@ -69,9 +70,20 @@ function apply(state, { queue, type, number, counter } = {}) {
     checkNumber(number);
     if (q.line.includes(number)) throw new Error('already in line');
     if (number === q.serving) throw new Error('now serving');
+    if (q.missing.includes(number)) throw new Error('missing stub');
     q.skipped = q.skipped.filter((x) => x !== number);
     placeInLine(q, number);
     if (number > q.issued) q.issued = number; // Issue continues after it, so no duplicate tickets
+  }
+  if (type === 'missing') {
+    // Toggle. Unmarking doesn't put it in line: Issue jumped over it, so nobody holds that stub.
+    checkNumber(number);
+    if (q.missing.includes(number)) q.missing = q.missing.filter((x) => x !== number);
+    else {
+      q.missing = [...q.missing, number].sort((a, b) => a - b);
+      q.line = q.line.filter((x) => x !== number);
+      q.skipped = q.skipped.filter((x) => x !== number);
+    }
   }
   return { ...state, [queue]: q };
 }
